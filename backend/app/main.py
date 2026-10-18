@@ -1,22 +1,23 @@
 from contextlib import asynccontextmanager
+from typing import Annotated
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db import pool
+from app.db import engine, get_session
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    pool.open()
     yield
-    pool.close()
+    await engine.dispose()
 
 
 app = FastAPI(title="Northwind Support Agent", lifespan=lifespan)
 
 
 @app.get("/health")
-def health():
-    with pool.connection() as conn:
-        conn.execute("SELECT 1")
+async def health(session: Annotated[AsyncSession, Depends(get_session)]):
+    await session.execute(text("SELECT 1"))
     return {"status": "ok"}

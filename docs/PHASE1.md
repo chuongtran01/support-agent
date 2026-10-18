@@ -12,15 +12,15 @@ Stand up the repo, the database and a minimal backend so later phases have a pla
 | Deliverable | Location | Notes |
 | --- | --- | --- |
 | Database container | `docker-compose.yml` | `pgvector/pgvector:pg16`, host port 5433, named volume `pgdata`, healthcheck |
-| Schema | `db/init/001_schema.sql` | Nine tables, loaded on first start of an empty volume |
-| Backend project | `backend/pyproject.toml` | Python 3.12+, FastAPI, psycopg 3, pgvector, OpenAI, Langfuse; `dev` extras for pytest and ruff |
+| Schema | `backend/app/models.py`, `backend/migrations/` | Nine tables, created by the Alembic migration `0001` (originally `db/init/001_schema.sql`) |
+| Backend project | `backend/pyproject.toml` | Python 3.12+, FastAPI, SQLAlchemy 2.0 (async), Alembic, psycopg 3, pgvector, OpenAI, Langfuse; `dev` extras for pytest and ruff |
 | Settings | `backend/app/config.py` | Reads `.env`; database URL, model names, refund approval threshold |
-| DB pool | `backend/app/db.py` | `psycopg_pool.ConnectionPool`, opened in the app lifespan |
+| DB access | `backend/app/db.py` | Async SQLAlchemy engine and session factory; `get_session` dependency |
 | API stub | `backend/app/main.py` | `GET /health` runs `SELECT 1` against the pool |
 | Package layout | `backend/app/{agent,retrieval,tools,policy,api}/` | Empty packages, filled in later phases |
 | Trap manifest | `data/traps.yaml` | Five trap entries (conflict, stale, buried, no answer, injection) with empty `documents` lists |
 | Env template | `.env.example` | Database, OpenAI, model names, refund threshold, Langfuse |
-| Dev commands | `Makefile` | `up`, `down`, `db-reset`, `install`, `test`, `lint` |
+| Dev commands | `Makefile` | `up`, `down`, `db-reset`, `migrate`, `install`, `test`, `lint` |
 | Placeholders | `frontend/`, `evals/datasets/`, `data/kb/` | Directories only |
 
 ## Schema
@@ -47,25 +47,26 @@ Design points that later phases depend on:
 cp .env.example .env
 make up          # starts Postgres on localhost:5433
 make install     # creates backend/.venv and installs dependencies
+make migrate     # applies Alembic migrations
 make test
 cd backend && .venv/bin/uvicorn app.main:app --reload
 curl localhost:8000/health
 ```
 
-`make db-reset` deletes the volume and re-runs the init script. Init scripts only run on an empty volume, so schema changes need a reset until a migration tool is added.
+`make db-reset` deletes the volume, starts a fresh database and applies the migrations.
 
 ## Decisions and incidents
 
 - **Port 5433.** Another local container (`film-rating-db-1`) already uses 5432, so this project maps to 5433. Override with `DB_PORT` in `.env`.
 - **Stale volume.** The first start found an existing `support-agent_pgdata` volume with an unrelated schema, so the init script had not run. The volume was wiped with `docker compose down -v` and recreated from the init script.
-- **Plain SQL, no migration tool.** Good enough while the schema is changing quickly. Revisit if the schema needs to change after data is loaded.
+- **SQLAlchemy and Alembic.** Phase 1 started with a plain init SQL script. Phase 2 replaced it with SQLAlchemy models and an Alembic migration so the schema can change after data is loaded. The `vector` extension is created in the first migration. Hybrid search will stay raw SQL.
 - **Own repository.** The project directory sat inside the home-directory git repo. It now has its own repo at `chuongtran01/support-agent`.
 
 ## Gate check
 
 | Check | Result |
 | --- | --- |
-| Schema loads on an empty volume | Nine tables created; `vector` extension present |
+| Schema loads on an empty volume | Nine tables created by `alembic upgrade head`; `vector` extension present |
 | `GET /health` | Returns `{"status": "ok"}` against the fresh database |
 | `pytest` | One placeholder test passes |
 

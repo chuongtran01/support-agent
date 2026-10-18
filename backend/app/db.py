@@ -1,5 +1,11 @@
-from psycopg_pool import ConnectionPool
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.config import settings
 
-pool = ConnectionPool(settings.database_url, open=False, kwargs={"autocommit": True})
+engine = create_async_engine(settings.database_url)
+SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
+
+
+async def get_session():
+    async with SessionLocal() as session:
+        yield session

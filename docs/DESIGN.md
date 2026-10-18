@@ -57,6 +57,7 @@ Python for the backend and evals, TypeScript for the frontend, and one Postgres 
 | Retrieval | Postgres full-text + pgvector, fused, then cross-encoder rerank | Hybrid beats either alone; the ablation proves it |
 | Reranker | Local cross-encoder (e.g. `bge-reranker`) or hosted rerank API | Open decision: CPU latency vs. one more dependency |
 | Database | Postgres 16 with pgvector (HNSW index) | One store for chunks, vectors, orders, refunds and sessions |
+| DB access | SQLAlchemy 2.0 (async, psycopg 3) and Alembic | Typed models and versioned migrations; hybrid search stays raw SQL |
 | Tracing | Langfuse | Per-step traces, cost and latency |
 | Evals | Custom Python harness, pytest-style datasets | Same agent code under fixed test sets |
 | Infra | Docker Compose | One command brings up the database; app runs locally |
@@ -64,7 +65,7 @@ Python for the backend and evals, TypeScript for the frontend, and one Postgres 
 
 ## Data model
 
-The schema is in `db/init/001_schema.sql`: nine tables in three groups.
+The models are in `backend/app/models.py` and the schema is built by Alembic migrations in `backend/migrations/`: nine tables in three groups.
 
 | Group | Tables | Notes |
 | --- | --- | --- |
