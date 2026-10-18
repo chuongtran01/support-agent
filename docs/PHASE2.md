@@ -1,6 +1,6 @@
 # Phase 2: Knowledge base and retrieval
 
-**Status:** planned
+**Status:** in progress (steps 1 to 3 of 7 done)
 **Gate:** recall@5 baseline set
 
 ## Goal
@@ -11,17 +11,15 @@ The evals are the spec: the retrieval dataset is written before the retrieval co
 
 ## Deliverables
 
-| Deliverable | Location | Notes |
-| --- | --- | --- |
-| Policy fact sheet | `data/POLICY_FACTS.md` | Single source of truth for return window, final-sale rules, refund limits, membership tiers and shipping prices; every document and later seed data must agree with it |
-| Trap documents | `data/kb/` | 8 to 12 hand-written articles, one set per trap in `traps.yaml` |
-| Filler articles | `data/kb/` | 30 to 50 ordinary articles on returns, shipping, warranty, membership and billing, written directly as Markdown (no generation script or API call) and checked against the fact sheet |
-| Trap manifest | `data/traps.yaml` | `documents` lists filled in; each trap points at real document ids |
-| Ingestion script | `backend/app/retrieval/ingest.py` | Parses documents, chunks by heading, embeds, upserts into `documents` and `chunks` |
-| Retrieval module | `backend/app/retrieval/search.py` | Keyword, vector and hybrid search behind one interface |
-| Retrieval eval dataset | `evals/datasets/retrieval.jsonl` | Questions with the chunks or documents that should be returned |
-| Retrieval eval runner | `evals/retrieval_eval.py` | Computes recall@5 and MRR per search mode and writes a results file |
-| Tests | `backend/tests/` | Chunking and fusion unit tests that need no database or API key |
+- [x] **Policy fact sheet**: `data/POLICY_FACTS.md`. Single source of truth for return window, final-sale rules, refund limits, membership tiers and shipping prices; every document and later seed data must agree with it
+- [x] **Trap documents**: `data/kb/`. Eight hand-written articles: five carry the conflict, stale, buried-exception and injection traps, and three are supporting articles
+- [x] **Filler articles**: `data/kb/`. 43 ordinary articles on returns, shipping, warranty, membership, billing, support and product care, written directly as Markdown (no generation script or API call) and checked against the fact sheet
+- [x] **Trap manifest**: `data/traps.yaml`. `documents` lists filled in; each trap points at real document ids (the no-answer trap lists none on purpose)
+- [ ] **Retrieval eval dataset**: `evals/datasets/retrieval.jsonl`. Questions with the chunks or documents that should be returned
+- [ ] **Ingestion script**: `backend/app/retrieval/ingest.py`. Parses documents, chunks by heading, embeds, upserts into `documents` and `chunks`
+- [ ] **Retrieval module**: `backend/app/retrieval/search.py`. Keyword, vector and hybrid search behind one interface
+- [ ] **Retrieval eval runner**: `evals/retrieval_eval.py`. Computes recall@5 and MRR per search mode and writes a results file
+- [ ] **Tests**: `backend/tests/`. Chunking and fusion unit tests that need no database or API key
 
 ## Knowledge base
 
@@ -84,27 +82,25 @@ The reranker is not part of this phase. `search.py` leaves a clear seam after fu
 
 ## Build order
 
-1. Write `POLICY_FACTS.md` and review it.
-2. Write the trap documents by hand and fill in `traps.yaml`.
-3. Write the filler articles and check them against the fact sheet.
-4. Write the retrieval eval dataset.
-5. Implement chunking and ingestion, with unit tests for chunking.
-6. Implement keyword, vector and hybrid search.
-7. Run the eval, tune chunk size once if the buried-exception case fails, and record the baseline.
+- [x] 1. Write `POLICY_FACTS.md` and review it.
+- [x] 2. Write the trap documents by hand and fill in `traps.yaml`.
+- [x] 3. Write the filler articles and check them against the fact sheet.
+- [ ] 4. Write the retrieval eval dataset.
+- [ ] 5. Implement chunking and ingestion, with unit tests for chunking.
+- [ ] 6. Implement keyword, vector and hybrid search.
+- [ ] 7. Run the eval, tune chunk size once if the buried-exception case fails, and record the baseline.
 
 ## Gate check
 
-| Check | Pass condition |
-| --- | --- |
-| Ingestion | `documents` and `chunks` populated; re-running changes nothing |
-| Trap coverage | Every `traps.yaml` entry lists real document ids |
-| Retrieval eval | Runs for all three modes and writes recall@5 and MRR |
-| Baseline | Numbers recorded in this file or the README |
-| Tests | `pytest` passes without a database or API key |
+- [ ] **Ingestion**: `documents` and `chunks` populated; re-running changes nothing
+- [x] **Trap coverage**: every `traps.yaml` entry except the no-answer trap lists real document ids
+- [ ] **Retrieval eval**: runs for all three modes and writes recall@5 and MRR
+- [ ] **Baseline**: numbers recorded in this file or the README
+- [ ] **Tests**: `pytest` passes without a database or API key
 
 ## Open questions
 
-- **Policy numbers.** Return window, refund frequency limit and shipping prices are not yet decided; they are settled in the fact sheet (step 1).
+- **Policy numbers.** Settled: approved in `POLICY_FACTS.md` (step 1).
 - **Chunk size.** Start with heading-based chunks capped at a few hundred tokens and adjust only if the eval shows a problem.
 - **Fusion constant.** Reciprocal rank fusion starts with the common default (`k = 60`); tune only with eval evidence.
 
