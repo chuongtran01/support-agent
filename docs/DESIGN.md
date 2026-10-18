@@ -76,7 +76,7 @@ Chunk metadata (document id, status, updated date, heading path) travels with ev
 
 ## Knowledge base and traps
 
-The traps are written by hand (about 8 to 12 documents); an LLM generates the ordinary filler (about 30 to 50 articles) so the traps are not easy to spot.
+The traps are written by hand (about 8 to 12 documents); the ordinary filler (about 30 to 50 articles) is written directly as Markdown and checked against `data/POLICY_FACTS.md`, so the traps are not easy to spot.
 
 `data/traps.yaml` is the ground-truth manifest. Each trap lists its question, the documents involved and the expected behavior, and the eval set is built from it so data and tests stay in sync.
 

@@ -15,7 +15,7 @@ The evals are the spec: the retrieval dataset is written before the retrieval co
 | --- | --- | --- |
 | Policy fact sheet | `data/POLICY_FACTS.md` | Single source of truth for return window, final-sale rules, refund limits, membership tiers and shipping prices; every document and later seed data must agree with it |
 | Trap documents | `data/kb/` | 8 to 12 hand-written articles, one set per trap in `traps.yaml` |
-| Filler articles | `data/kb/` | 30 to 50 LLM-generated articles on returns, shipping, warranty, membership and billing, reviewed by hand against the fact sheet |
+| Filler articles | `data/kb/` | 30 to 50 ordinary articles on returns, shipping, warranty, membership and billing, written directly as Markdown (no generation script or API call) and checked against the fact sheet |
 | Trap manifest | `data/traps.yaml` | `documents` lists filled in; each trap points at real document ids |
 | Ingestion script | `backend/app/retrieval/ingest.py` | Parses documents, chunks by heading, embeds, upserts into `documents` and `chunks` |
 | Retrieval module | `backend/app/retrieval/search.py` | Keyword, vector and hybrid search behind one interface |
@@ -39,7 +39,7 @@ source: help-center/returns
 ---
 ```
 
-Generated filler is marked `origin: generated` in its front matter (not stored in the database) so it can be told apart from hand-written trap documents.
+Filler articles are marked `origin: filler` in their front matter (not stored in the database) so they can be told apart from the trap documents.
 
 ### Traps
 
@@ -86,7 +86,7 @@ The reranker is not part of this phase. `search.py` leaves a clear seam after fu
 
 1. Write `POLICY_FACTS.md` and review it.
 2. Write the trap documents by hand and fill in `traps.yaml`.
-3. Generate the filler articles and check them against the fact sheet.
+3. Write the filler articles and check them against the fact sheet.
 4. Write the retrieval eval dataset.
 5. Implement chunking and ingestion, with unit tests for chunking.
 6. Implement keyword, vector and hybrid search.

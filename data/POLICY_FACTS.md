@@ -93,7 +93,16 @@ Single source of truth for every number and rule in the project. Knowledge-base 
 | Holiday gift returns | Recipients without a receipt get store credit when they provide the order number |
 | Large refunds | Review of refunds over $200 can add one to two business days |
 | Warranty claims | Reviewed within 2 business days |
-| Overnight and expedited | Not available to PO boxes |
+| Overnight and expedited | Not available to PO boxes; standard shipping can go to PO boxes |
+| Shipping coverage | Continental US only; no Alaska, Hawaii, US territories or international |
+| Weekend orders | Processed on the next business day; multi-package orders get a tracking link per package |
+| Address changes | Possible only before the order ships |
+| Order cancellation | Not possible after the order ships; use a return instead |
+| Checkout authorization | A temporary authorization may appear at checkout; the charge happens at shipment |
+| Payment | Credit and debit cards, plus gift cards for all or part of an order; no cash, checks or money orders |
+| Plus renewal | Email sent before renewal; after cancellation the account reverts to Basic |
+| Basic membership | Free; includes order tracking and support, but none of the Plus benefits |
+| Receipts | Order number in the account is proof of purchase; sales tax is calculated at checkout |
 
 ## Deliberate contradictions (trap documents)
 
