@@ -70,7 +70,7 @@ The schema is in `db/init/001_schema.sql`: nine tables in three groups.
 | --- | --- | --- |
 | Business data | `customers`, `orders`, `order_items`, `refunds`, `tickets` | `customers.role` is `customer` or `approver`; `order_items.is_final_sale` drives return rules; `refunds.status` is `pending`, `approved`, `rejected` or `completed` |
 | Conversations | `chat_sessions`, `chat_messages` | Messages stored as JSONB so tool calls and results replay exactly |
-| Knowledge base | `documents`, `chunks` | `documents.status` is `current`, `stale` or `draft`; `chunks` holds `heading_path`, `content`, a 1536-dim `embedding` (HNSW) and a generated `tsv` column (GIN) |
+| Knowledge base | `documents`, `chunks` | `documents.status` is `current`, `stale` or `draft`; `documents.content` keeps the full article and `content_hash` lets ingestion skip unchanged files; `chunks` holds `heading_path`, `content`, a 1536-dim `embedding` (HNSW) and a generated `tsv` column (GIN) |
 
 Chunk metadata (document id, status, updated date, heading path) travels with every retrieved passage, so the agent can prefer current over stale sources and cite precisely.
 

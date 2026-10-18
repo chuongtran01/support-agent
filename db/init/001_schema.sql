@@ -77,7 +77,9 @@ CREATE TABLE documents (
     title      TEXT NOT NULL,
     status     TEXT NOT NULL DEFAULT 'current' CHECK (status IN ('current', 'stale', 'draft')),
     updated_at DATE NOT NULL,
-    source     TEXT NOT NULL
+    source     TEXT NOT NULL,
+    content      TEXT NOT NULL,            -- full Markdown body, without front matter
+    content_hash TEXT NOT NULL             -- lets ingestion skip unchanged documents
 );
 
 CREATE TABLE chunks (

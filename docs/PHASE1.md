@@ -37,6 +37,7 @@ Design points that later phases depend on:
 - `order_items.is_final_sale` and `orders.delivered_at` feed the return rules.
 - `refunds.status` is `pending`, `approved`, `rejected` or `completed`; `decided_by` and `decided_at` record the approver.
 - `documents.status` is `current`, `stale` or `draft`, so retrieval can prefer current sources.
+- `documents.content` holds the full Markdown body (without front matter) so chunks can be rebuilt and whole articles shown without the source files; `documents.content_hash` lets ingestion skip unchanged documents and avoid re-embedding them.
 - `chunks.embedding` is `vector(1536)` with an HNSW cosine index; `chunks.tsv` is a generated `tsvector` column with a GIN index, built from `heading_path` and `content`.
 - `chat_messages.content` is JSONB so tool calls and results can be replayed exactly.
 

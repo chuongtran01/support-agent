@@ -27,7 +27,7 @@ The evals are the spec: the retrieval dataset is written before the retrieval co
 
 ### Document format
 
-Each document is a Markdown file in `data/kb/` with front matter that maps onto the `documents` table:
+Each document is a Markdown file in `data/kb/`. The front matter maps onto the `documents` columns `id`, `title`, `status`, `updated_at` and `source`; the body becomes `content`, and ingestion computes `content_hash` from the file:
 
 ```markdown
 ---
@@ -55,11 +55,11 @@ Each trap maps to one eval case in `traps.yaml`. Document contents are settled a
 
 ## Ingestion
 
-1. Read each Markdown file and its front matter.
+1. Read each Markdown file, split off its front matter, and hash the file. Skip any document whose `content_hash` already matches the database.
 2. Split by heading. Each chunk stores `heading_path` (for example `Returns Policy > Exceptions > Final sale`) and `content`.
 3. Keep chunks small. A section that runs long is split on paragraph boundaries, and the heading path is repeated on every piece.
 4. Embed `heading_path` plus `content` with `text-embedding-3-small`, in batches.
-5. Upsert the document row, then replace its chunks, so re-running ingestion is idempotent.
+5. Upsert the document row (including the full `content` and `content_hash`), then replace its chunks, so re-running ingestion is idempotent.
 
 Embedding the whole corpus needs `OPENAI_API_KEY` and costs very little at this size.
 
