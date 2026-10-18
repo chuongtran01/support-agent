@@ -1,6 +1,6 @@
 ---
 id: plus-return-window
-title: Plus Returns: 60 Days
+title: "Plus Returns: 60 Days"
 status: current
 updated_at: 2026-01-06
 source: help-center/membership

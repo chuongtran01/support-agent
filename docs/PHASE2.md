@@ -16,10 +16,11 @@ The evals are the spec: the retrieval dataset is written before the retrieval co
 - [x] **Filler articles**: `data/kb/`. 43 ordinary articles on returns, shipping, warranty, membership, billing, support and product care, written directly as Markdown (no generation script or API call) and checked against the fact sheet
 - [x] **Trap manifest**: `data/traps.yaml`. `documents` lists filled in; each trap points at real document ids (the no-answer trap lists none on purpose)
 - [x] **Retrieval eval dataset**: `evals/datasets/retrieval.dev.jsonl` (59 rows) and `retrieval.test.jsonl` (23 rows). 82 questions with the documents that should be returned
+- [x] **Chunking and document loading**: `backend/app/retrieval/chunking.py` and `documents.py`. Heading-path chunking with paragraph, line and sentence fallbacks, and a front-matter parser that validates every knowledge-base file
 - [ ] **Ingestion script**: `backend/app/retrieval/ingest.py`. Parses documents, chunks by heading, embeds, upserts into `documents` and `chunks`
 - [ ] **Retrieval module**: `backend/app/retrieval/search.py`. Keyword, vector and hybrid search behind one interface
 - [ ] **Retrieval eval runner**: `evals/retrieval_eval.py`. Computes recall@5 and MRR per search mode and writes a results file
-- [ ] **Tests**: `backend/tests/`. Chunking and fusion unit tests that need no database or API key
+- [ ] **Tests**: `backend/tests/`. Chunking and document-loading tests are done (31 passing, including a pass over the real knowledge base); fusion tests are still to write
 
 ## Knowledge base
 
@@ -36,6 +37,8 @@ updated_at: 2026-01-15
 source: help-center/returns
 ---
 ```
+
+Front matter is YAML, so a value containing a colon must be quoted (`title: "Plus Returns: 60 Days"`); the loader rejects a file that does not parse.
 
 Filler articles are marked `origin: filler` in their front matter (not stored in the database) so they can be told apart from the trap documents.
 
@@ -88,7 +91,7 @@ The reranker is not part of this phase. `search.py` leaves a clear seam after fu
 - [x] 2. Write the trap documents by hand and fill in `traps.yaml`.
 - [x] 3. Write the filler articles and check them against the fact sheet.
 - [x] 4. Write the retrieval eval dataset.
-- [ ] 5. Implement chunking and ingestion, with unit tests for chunking.
+- [ ] 5. Implement chunking and ingestion, with unit tests for chunking. Chunking and document loading are done; embedding and database ingestion are not.
 - [ ] 6. Implement keyword, vector and hybrid search.
 - [ ] 7. Run the eval, tune chunk size once if the buried-exception case fails, and record the baseline.
 
