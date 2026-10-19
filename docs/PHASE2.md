@@ -19,7 +19,7 @@ The evals are the spec: the retrieval dataset is written before the retrieval co
 - [x] **Chunking and document loading**: `backend/app/retrieval/chunking.py` and `documents.py`. Heading-path chunking with paragraph, line and sentence fallbacks, and a front-matter parser that validates every knowledge-base file
 - [x] **SQLAlchemy and Alembic**: `backend/app/models.py`, `backend/migrations/`. Async SQLAlchemy 2.0 models for all nine tables and an Alembic migration replace `db/init/001_schema.sql`; `make migrate` builds the schema
 - [ ] **Ingestion script**: `backend/app/retrieval/ingest.py` and `embeddings.py`. Two stages: files into `documents`, then documents into embedded `chunks`. Written and tested with a fake embedder; stage 1 has run against the database, stage 2 waits for `OPENAI_API_KEY`
-- [ ] **Retrieval module**: `backend/app/retrieval/search.py`. Keyword, vector and hybrid search behind one interface
+- [ ] **Retrieval module**: `backend/app/retrieval/search.py`. Keyword, vector and hybrid search behind one interface. Written and unit-tested; keyword and the SQL for all three modes ran against the database, vector quality waits for real embeddings
 - [ ] **Retrieval eval runner**: `evals/retrieval_eval.py`. Computes recall@5 and MRR per search mode and writes a results file
 - [ ] **Tests**: `backend/tests/`. Chunking and document-loading tests are done (31 passing, including a pass over the real knowledge base); fusion tests are still to write
 
@@ -77,9 +77,11 @@ Stage 2 builds chunks from the database, not the files, so the files are only re
 
 | Mode | How it works |
 | --- | --- |
-| Keyword | `websearch_to_tsquery` against `chunks.tsv`, ranked with `ts_rank_cd` |
+| Keyword | `websearch_to_tsquery` against `chunks.tsv`, with the AND between terms replaced by OR, ranked with `ts_rank_cd` |
 | Vector | Cosine distance on `chunks.embedding` using the HNSW index |
 | Hybrid | Reciprocal rank fusion of the keyword and vector rankings |
+
+With `websearch_to_tsquery` alone every term must appear in the chunk, and 41 of the 59 dev questions returned nothing, so the keyword query turns the ANDs into ORs and lets `ts_rank_cd` order the chunks by how many terms they match.
 
 Every result carries `document_id`, `title`, `status`, `updated_at`, `heading_path`, `content` and its scores. The search function takes a `mode` argument so the eval can compare modes with the same code the agent will use later.
 
@@ -101,7 +103,7 @@ The reranker is not part of this phase. `search.py` leaves a clear seam after fu
 - [x] 3. Write the filler articles and check them against the fact sheet.
 - [x] 4. Write the retrieval eval dataset.
 - [ ] 5. Implement chunking and ingestion, with unit tests for chunking. Chunking, document loading and both ingestion stages are written; the embedding run needs an API key.
-- [ ] 6. Implement keyword, vector and hybrid search.
+- [ ] 6. Implement keyword, vector and hybrid search. Written; checked with fake embeddings only.
 - [ ] 7. Run the eval, tune chunk size once if the buried-exception case fails, and record the baseline.
 
 ## Gate check

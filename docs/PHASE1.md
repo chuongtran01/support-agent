@@ -59,7 +59,7 @@ curl localhost:8000/health
 
 - **Port 5433.** Another local container (`film-rating-db-1`) already uses 5432, so this project maps to 5433. Override with `DB_PORT` in `.env`.
 - **Stale volume.** The first start found an existing `support-agent_pgdata` volume with an unrelated schema, so the init script had not run. The volume was wiped with `docker compose down -v` and recreated from the init script.
-- **SQLAlchemy and Alembic.** Phase 1 started with a plain init SQL script. Phase 2 replaced it with SQLAlchemy models and an Alembic migration so the schema can change after data is loaded. The `vector` extension is created in the first migration. Hybrid search will stay raw SQL.
+- **SQLAlchemy and Alembic.** Phase 1 started with a plain init SQL script. Phase 2 replaced it with SQLAlchemy models and an Alembic migration so the schema can change after data is loaded. The `vector` extension is created in the first migration. Search queries will use SQLAlchemy's SQL expressions, not the ORM.
 - **Own repository.** The project directory sat inside the home-directory git repo. It now has its own repo at `chuongtran01/support-agent`.
 
 ## Gate check
