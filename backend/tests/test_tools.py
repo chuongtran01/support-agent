@@ -77,9 +77,9 @@ async def test_allowed_refund_is_completed_with_the_computed_amount(world):
     result = await world.run(
         issue_refund(world.ctx("alex"), world.item("BOOT-TR"), 1, "changed_mind")
     )
-    assert (result.status, result.reason, result.amount_cents) == ("allowed", "ok", 12900)
+    assert (result.status, result.reason, result.amount_cents) == ("allowed", "ok", 12105)
     refund = await world.session.get(models.Refund, result.refund_id)
-    assert (refund.status, refund.amount_cents, refund.quantity) == ("completed", 12900, 1)
+    assert (refund.status, refund.amount_cents, refund.quantity) == ("completed", 12105, 1)
     assert refund.created_at == NOW
 
 
@@ -87,7 +87,7 @@ async def test_part_of_a_multi_unit_line(world):
     result = await world.run(
         issue_refund(world.ctx("alex"), world.item("SOCK-TR"), 2, "changed_mind")
     )
-    assert (result.status, result.amount_cents) == ("allowed", 2800)
+    assert (result.status, result.amount_cents) == ("allowed", 2005)
 
 
 @pytest.mark.parametrize(
@@ -114,7 +114,7 @@ async def test_large_refund_is_held_as_pending(world):
     )
     assert (result.status, result.reason) == ("needs_approval", "over_threshold")
     refund = await world.session.get(models.Refund, result.refund_id)
-    assert (refund.status, refund.amount_cents) == ("pending", 42900)
+    assert (refund.status, refund.amount_cents) == ("pending", 42105)
 
 
 async def test_plus_member_inside_the_sixty_day_window(world):

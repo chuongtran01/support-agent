@@ -1,6 +1,6 @@
 # Phase 3: Policy engine and tools
 
-**Status:** in progress (steps 1 to 5 of 6 done)
+**Status:** done
 **Gate:** policy tests pass, no LLM
 
 ## Goal
@@ -11,13 +11,13 @@ The evals are the spec: the policy cases are written before the engine they meas
 
 ## Deliverables
 
-- [x] **Policy cases**: `evals/datasets/policy.jsonl`. 45 scenarios, each with the facts of the situation and the expected verdict and reason; covers every rule, its boundaries and the order the rules are checked in
+- [x] **Policy cases**: `evals/datasets/policy.jsonl`. 46 scenarios, each with the facts of the situation and the expected verdict and reason; covers every rule, its boundaries and the order the rules are checked in
 - [x] **Schema changes**: Alembic migration `0002`. `order_items.category`, `refunds.order_item_id`, `refunds.quantity` and `tickets.kind`
 - [x] **Seed data**: `backend/app/seed.py` (`make seed`). 6 customers (including an approver), 25 orders and 8 refunds that exercise the window, frequency and approval rules; dates are relative to now so the boundaries stay in place
-- [x] **Policy engine**: `backend/app/policy/engine.py`. A pure function that takes a refund request and the facts about it and returns a verdict; no database and no model. All 45 policy cases pass
+- [x] **Policy engine**: `backend/app/policy/engine.py`. A pure function that takes a refund request and the facts about it and returns a verdict; no database and no model. All 46 policy cases pass
 - [x] **Tools**: `backend/app/tools/`. The four tools, each scoped to the session's customer, plus `decide_refund` for approvers (in `refunds.py`, not callable by the agent)
 - [x] **Tool registry**: `backend/app/tools/registry.py`. Name, argument model and handler for each tool, with JSON schemas ready for OpenAI function calling and a `dispatch` function that validates arguments and runs each call in its own transaction
-- [ ] **Tests**: `backend/tests/`. Policy cases, rule boundaries, customer scoping, the approval flow and the refund-limit race
+- [x] **Tests**: `backend/tests/`. Policy cases, rule boundaries, customer scoping, the approval flow and the refund-limit race
 
 ## Policy engine
 
@@ -29,8 +29,8 @@ evaluate_refund(request, facts, now) -> Verdict
 
 - `request`: the order item, the number of units being returned and the reason code (`changed_mind`, `defect` or `our_error`). There is no amount: the model never chooses how much money moves.
 - `facts`: what the database says about the situation: the customer's membership, the order's `delivered_at`, the item's `is_final_sale`, `category`, price paid per unit, and the date of each of the customer's earlier refunds that count. By the time the engine runs, the request has already been checked as valid (see Tools), so it never has to decide whether the quantity makes sense.
-- `Verdict`: an outcome (`allowed`, `denied`, `needs_approval` or `manual_review`), a short reason code, a message the agent can pass on to the customer, and the refund amount (price per unit times quantity) so the tool writes the figure the engine checked.
-- `PolicyConfig`: the numbers the rules use (windows, frequency limit, approval threshold), in one place. The tool layer builds it from `REFUND_APPROVAL_THRESHOLD`.
+- `Verdict`: an outcome (`allowed`, `denied`, `needs_approval` or `manual_review`), a short reason code, a message the agent can pass on to the customer, and the refund amount (price per unit times quantity, less the return-label fee for a change of mind) so the tool writes the figure the engine checked.
+- `PolicyConfig`: the numbers the rules use (windows, frequency limit, approval threshold, return-label fee), in one place. The tool layer builds it from `REFUND_APPROVAL_THRESHOLD`.
 
 ### Rules
 
@@ -44,15 +44,15 @@ The checks run in this order, and the first one that fires decides the outcome.
 | 4 | Item is final sale | denied | `final_sale` |
 | 5 | Delivered more than 30 days ago (60 for Plus members) | denied | `outside_window` |
 | 6 | The customer already has 3 refunds in the last 90 days | manual review | `refund_frequency` |
-| 7 | Refund amount is over $200 | needs approval | `over_threshold` |
+| 7 | Amount to be refunded is over $200 | needs approval | `over_threshold` |
 | 8 | None of the above | allowed | `ok` |
 
 - **Defects and our errors go to a human.** The policy sheet says defects are covered by warranty regardless of the window or final-sale status, and warranty claims need photos and a review. The engine cannot check a claim, so it never lets a stated reason unlock an exception on its own (rule 3 comes before the final-sale and window checks).
 - **Window.** Day 30 after delivery is still inside the window and day 31 is outside, counted in calendar days in UTC (so a delivery at 11:59 p.m. and a request at 12:01 a.m. 30 days later is day 30). The engine rejects times without a timezone. The membership tier is read when the request is made.
 - **Frequency.** Refunds count if they are `pending`, `approved` or `completed` and were made 89 days ago or less; one made 90 days ago no longer counts. A rejected refund does not count. The engine receives the date of each countable refund and works out the age itself, so the boundary is tested without a database.
-- **Threshold.** "Over $200" means strictly more than 20,000 cents; exactly $200 is allowed. The value comes from `REFUND_APPROVAL_THRESHOLD`.
-- **The amount comes from the order.** The engine computes it as the price paid per unit times the units returned. The price paid is `order_items.price_cents`, which is saved on the order line when the order is placed, so it is what the customer paid and not today's price. A partial refund is a smaller number of units, and a refund of part of one unit's price (a goodwill discount) is not automatic, so the agent opens a ticket for it.
-- **Not modeled.** Conditions the data cannot show (unused, original packaging, opened consumables, the tent trial pitch); the $7.95 return-label fee; discounts, so `price_cents` must hold the net price paid; sales tax; and shipping charges, which are refunded only for defects and our errors, and those already go to a human. The agent handles the first group from the knowledge base and a ticket.
+- **Threshold.** "Over $200" means the amount to be refunded, after the label fee, is strictly more than 20,000 cents; exactly $200 is allowed, so a price of $207.95 is allowed and $207.96 needs approval. The value comes from `REFUND_APPROVAL_THRESHOLD`.
+- **The amount comes from the order.** The engine computes it as the price paid per unit times the units returned, less the $7.95 return-label fee when the reason is `changed_mind` (defects and our errors return free). The fee is taken once per request, not per unit, and is waived when the refund would not cover it. The price paid is `order_items.price_cents`, which is saved on the order line when the order is placed, so it is what the customer paid and not today's price. A partial refund is a smaller number of units, and a refund of part of one unit's price (a goodwill discount) is not automatic, so the agent opens a ticket for it.
+- **Not modeled.** Conditions the data cannot show (unused, original packaging, opened consumables, the tent trial pitch, and whether the customer used their own label); discounts, so `price_cents` must hold the net price paid; sales tax; and shipping charges, which are refunded only for defects and our errors, and those already go to a human. The agent handles the first group from the knowledge base and a ticket.
 
 ## Policy cases
 
@@ -68,11 +68,11 @@ The checks run in this order, and the first one that fires decides the outcome.
 | `unit_price_cents` | Price paid per unit |
 | `refund_ages_days` | Age in days of each earlier refund that is `pending`, `approved` or `completed`, including ones older than 90 days |
 | `reason_code` | `changed_mind`, `defect` or `our_error` |
-| `quantity` | Units the customer wants to return, already checked as valid; the amount is this times `unit_price_cents` |
+| `quantity` | Units the customer wants to return, already checked as valid; the amount is this times `unit_price_cents`, less the label fee for `changed_mind` |
 | `expected_outcome`, `expected_reason` | `allowed`, `denied`, `needs_approval` or `manual_review`, and the reason code from the rule table |
 | `note` | Extra explanation, null by default |
 
-The 45 rows are grouped as: happy path 5, delivery 2, window 10, gift card 3, human review 6, final sale 4, frequency 7, threshold 5 and rule order 3. Every reason code has at least two rows. The rule order rows put two rules in conflict, for example a final-sale item outside the window, so the first rule in the table has to win.
+The 46 rows are grouped as: happy path 5, delivery 2, window 10, gift card 3, human review 6, final sale 4, frequency 7, threshold 6 and rule order 3. Every reason code has at least two rows. The rule order rows put two rules in conflict, for example a final-sale item outside the window, so the first rule in the table has to win.
 
 The test turns the days-ago values into timestamps relative to a fixed clock and passes them to the engine, which works out the ages itself.
 
@@ -157,7 +157,7 @@ Passwords are a placeholder until phase 4 adds login; the seed can be re-run the
 
 - **Policy cases** (no database): every row of `policy.jsonl` is run through `evaluate_refund`, and the verdict and reason must match.
 - **Request checks** (no database): `check_quantity` with the full line, a partial return, units already refunded, rejected refunds not counting, one unit too many and a line already refunded in full.
-- **Boundaries** (no database): day 30 against day 31, 60 against 61 for Plus, $200.00 against $200.01, the third refund against the fourth, a refund exactly 90 days old, and the rule order (a defect claim on a final-sale item still goes to manual review).
+- **Boundaries** (no database): day 30 against day 31, 60 against 61 for Plus, $200.00 against $200.01 after the label fee, the third refund against the fourth, a refund exactly 90 days old, and the rule order (a defect claim on a final-sale item still goes to manual review).
 - **Scoping** (database): a customer cannot read, refund or ticket against another customer's order; unknown and foreign orders look the same; a `customer_id` argument is rejected by `dispatch` and writes nothing.
 - **Approval flow** (database): the verdict-to-row mapping above, then approve, reject, approving your own refund, approving as a non-approver, and deciding twice.
 - **Concurrency** (database): two simultaneous refunds at the limit produce one refund and one manual review.
@@ -171,7 +171,7 @@ The policy tests need no database or API key. The tool tests need Postgres, so t
 - [x] 3. The policy engine, until all cases pass.
 - [x] 4. The tools and `decide_refund`, with the scoping and approval tests.
 - [x] 5. The registry and `dispatch`.
-- [ ] 6. The concurrency test and a pass over the rules against `POLICY_FACTS.md`. The concurrency test is written; the pass against the fact sheet is not.
+- [x] 6. The concurrency test and a pass over the rules against `POLICY_FACTS.md`. The pass found one mismatch, the $7.95 label fee, which the engine now deducts.
 
 ## Gate check
 
@@ -180,7 +180,7 @@ The policy tests need no database or API key. The tool tests need Postgres, so t
 - [x] **Scoping**: no tool reads or changes another customer's data
 - [x] **Approval flow**: approver rules are tested
 - [x] **Seed data**: loads on a fresh database and can be re-run
-- [ ] **No LLM**: the whole phase runs without an API key
+- [x] **No LLM**: the whole phase runs without an API key
 
 ## Decisions to confirm
 
@@ -188,6 +188,7 @@ The policy tests need no database or API key. The tool tests need Postgres, so t
 - **Defect and our-error claims always go to a human.** The alternative is to let the engine allow them, which lets the model unlock the window and final-sale exceptions just by saying "defect".
 - **Approval status.** Approved refunds are `approved` and refunds that needed no approval are `completed`, since no payment is simulated.
 - **Quantity is a request check, not a policy rule.** Returning more units than were bought is invalid whatever the company's policy says, so it is checked before the engine and reported as `invalid_request`, not `denied`.
+- **The label fee is deducted.** The fact sheet says a change-of-mind return pays a $7.95 label fee out of the refund, so the engine takes it once per request, waives it when the refund would not cover it, and checks the approval threshold on what is actually refunded. The alternative was to refund the full price and leave the fee to return processing, which would make the agent quote an amount $7.95 too high.
 - **The model never passes an amount.** `issue_refund` takes a quantity and the code works out the money from the price paid. The cost is that a partial refund of part of one unit's price needs a human.
 - **Calendar days for the window.** The other choice is exact 24-hour periods from the delivery timestamp.
 - **Tool structure.** The tools are plain functions behind a registry. A shared base class could force every tool to call the engine, but only `issue_refund` needs it in this phase.

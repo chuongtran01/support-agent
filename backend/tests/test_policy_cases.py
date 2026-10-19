@@ -79,19 +79,38 @@ def test_policy_case(case: PolicyCase):
 
 def test_cases_file_is_well_formed():
     cases = load_cases()
-    assert len(cases) == 45
+    assert len(cases) == 46
     assert len({case.id for case in cases}) == len(cases)
 
 
 def test_verdict_carries_the_amount_computed_from_price_and_quantity():
     verdict = evaluate_refund(request(quantity=3), facts(unit_price_cents=1500), NOW)
-    assert verdict.amount_cents == 4500
+    assert verdict.amount_cents == 4500 - 795
+
+
+def test_change_of_mind_pays_the_label_fee_once_for_the_whole_request():
+    verdict = evaluate_refund(request(quantity=2), facts(unit_price_cents=5000), NOW)
+    assert verdict.amount_cents == 10_000 - 795
+    assert "$7.95 return label fee" in verdict.message
+
+
+@pytest.mark.parametrize("reason_code", ["defect", "our_error"])
+def test_defects_and_our_errors_are_not_charged_the_label_fee(reason_code):
+    verdict = evaluate_refund(request(reason_code=reason_code), facts(), NOW)
+    assert verdict.amount_cents == 8000
+
+
+@pytest.mark.parametrize(("price", "refunded"), [(795, 795), (500, 500), (796, 1)])
+def test_the_label_fee_is_waived_when_the_refund_would_not_cover_it(price, refunded):
+    verdict = evaluate_refund(request(), facts(unit_price_cents=price), NOW)
+    assert (verdict.outcome, verdict.amount_cents) == ("allowed", refunded)
+    assert ("label fee" in verdict.message) == (price == 796)
 
 
 def test_denied_verdicts_still_report_the_amount():
     verdict = evaluate_refund(request(), facts(is_final_sale=True), NOW)
     assert verdict.outcome == "denied"
-    assert verdict.amount_cents == 8000
+    assert verdict.amount_cents == 8000 - 795
 
 
 def test_window_counts_calendar_days_not_elapsed_hours():
@@ -123,7 +142,7 @@ def test_config_changes_the_numbers_the_rules_use():
         == "outside_window"
     )
     assert (
-        evaluate_refund(request(), facts(unit_price_cents=5001), NOW, config).reason
+        evaluate_refund(request(), facts(unit_price_cents=5796), NOW, config).reason
         == "over_threshold"
     )
 

@@ -36,6 +36,7 @@ class PolicyConfig:
     frequency_limit: int = 3
     frequency_window_days: int = 90
     approval_threshold_cents: int = 20_000
+    return_label_fee_cents: int = 795
 
 
 DEFAULT_CONFIG = PolicyConfig()
@@ -84,7 +85,13 @@ def evaluate_refund(
     config: PolicyConfig = DEFAULT_CONFIG,
 ) -> Verdict:
     """Check the rules in order; the first one that fires decides."""
-    amount = facts.unit_price_cents * request.quantity
+    gross = facts.unit_price_cents * request.quantity
+    # A change-of-mind return pays for its own label, taken once from the refund. It is
+    # waived when the refund would not cover it. Defects and our errors return free.
+    fee = config.return_label_fee_cents if request.reason_code == "changed_mind" else 0
+    if fee >= gross:
+        fee = 0
+    amount = gross - fee
 
     def verdict(outcome: Outcome, reason: Reason, message: str) -> Verdict:
         return Verdict(outcome, reason, message, amount)
@@ -139,7 +146,7 @@ def evaluate_refund(
             f"{config.frequency_window_days} days, so a person will review the request.",
         )
 
-    # 7. Approval threshold: strictly over
+    # 7. Approval threshold: strictly over, on the amount that would actually be refunded
     if amount > config.approval_threshold_cents:
         return verdict(
             "needs_approval",
@@ -149,4 +156,5 @@ def evaluate_refund(
         )
 
     # 8. Nothing stops it
-    return verdict("allowed", "ok", f"The refund of {_dollars(amount)} can go ahead.")
+    note = f", after the {_dollars(fee)} return label fee" if fee else ""
+    return verdict("allowed", "ok", f"The refund of {_dollars(amount)} can go ahead{note}.")

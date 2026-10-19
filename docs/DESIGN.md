@@ -93,7 +93,7 @@ Chunking decides whether the buried exception is found: chunk by heading, prepen
 
 ## Policy engine and tools
 
-The policy engine, not the model, decides whether an action happens. Every tool calls it and receives one of three verdicts: allowed, needs approval, or manual review.
+The policy engine, not the model, decides whether an action happens. Every tool calls it and receives one of four verdicts: allowed, denied, needs approval, or manual review.
 
 **Tools**
 
@@ -141,7 +141,7 @@ Six phases, each ending in a gate that must pass before the next starts.
 | --- | --- | --- | --- |
 | 1 | Foundation (done) | Repo, Docker Compose, schema, backend stub, traps manifest | Schema loads, `/health` ok |
 | 2 | Knowledge base and retrieval (done) | Trap and filler docs, ingestion, hybrid search, retrieval evals | recall@5 baseline set |
-| 3 | Policy engine and tools | Refund and return rules, approval gate, scoped tools, unit tests | Policy tests pass, no LLM |
+| 3 | Policy engine and tools (done) | Refund and return rules, approval gate, scoped tools, unit tests | Policy tests pass, no LLM |
 | 4 | Agent loop and API | Agent loop, escalation, sessions and auth, streaming API | Trap and tool evals run |
 | 5 | Frontend | Next.js chat with streaming, refund approval page | Full demo flow works |
 | 6 | Evals, tracing and polish | Full evals, injections, reranker ablation, Langfuse, README, demo | Numbers in the README |

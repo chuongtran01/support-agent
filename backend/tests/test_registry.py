@@ -118,7 +118,7 @@ async def test_issue_refund_through_dispatch_commits_the_refund(world):  # noqa:
     result = await call(
         ctx, "issue_refund", order_item_id=item, quantity=1, reason_code="changed_mind"
     )
-    assert (result["status"], result["amount_cents"]) == ("allowed", 12900)
+    assert (result["status"], result["amount_cents"]) == ("allowed", 12105)
     assert "ticket_id" not in result
     world.session.expire_all()
     refund = await world.session.get(models.Refund, result["refund_id"])
