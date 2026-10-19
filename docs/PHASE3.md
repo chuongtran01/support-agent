@@ -1,6 +1,6 @@
 # Phase 3: Policy engine and tools
 
-**Status:** in progress (steps 1 to 4 of 6 done)
+**Status:** in progress (steps 1 to 5 of 6 done)
 **Gate:** policy tests pass, no LLM
 
 ## Goal
@@ -16,7 +16,7 @@ The evals are the spec: the policy cases are written before the engine they meas
 - [x] **Seed data**: `backend/app/seed.py` (`make seed`). 6 customers (including an approver), 25 orders and 8 refunds that exercise the window, frequency and approval rules; dates are relative to now so the boundaries stay in place
 - [x] **Policy engine**: `backend/app/policy/engine.py`. A pure function that takes a refund request and the facts about it and returns a verdict; no database and no model. All 45 policy cases pass
 - [x] **Tools**: `backend/app/tools/`. The four tools, each scoped to the session's customer, plus `decide_refund` for approvers (in `refunds.py`, not callable by the agent)
-- [ ] **Tool registry**: `backend/app/tools/registry.py`. Name, argument model and handler for each tool, with JSON schemas ready for OpenAI function calling and a `dispatch` function that validates arguments
+- [x] **Tool registry**: `backend/app/tools/registry.py`. Name, argument model and handler for each tool, with JSON schemas ready for OpenAI function calling and a `dispatch` function that validates arguments and runs each call in its own transaction
 - [ ] **Tests**: `backend/tests/`. Policy cases, rule boundaries, customer scoping, the approval flow and the refund-limit race
 
 ## Policy engine
@@ -118,7 +118,15 @@ The tool locks the customer's row (`SELECT ... FOR UPDATE`) while it counts earl
 
 ### Registry
 
-The registry lists each tool's name, argument model (a Pydantic model, which also gives the JSON schema the model sees) and handler. `dispatch(context, name, raw_arguments)` validates the arguments, calls the handler and returns a result that can be serialized to JSON. Phase 4 plugs the registry into the agent loop.
+The registry (`app/tools/registry.py`) lists each tool's name, description, argument model and handler. The argument models are Pydantic models with `extra="forbid"`, so an invented `customer_id` or `amount` is rejected instead of ignored, and `quantity` must be at least 1 and `reason_code` one of the three codes. `tool_schemas()` returns the list in the OpenAI function-calling shape. `decide_refund` is not in the registry.
+
+`dispatch(context, name, raw_arguments)` returns the JSON text for the model:
+
+- An unknown tool, malformed JSON or invalid arguments come back as `invalid_request` with the reason, before the database is touched, so the model can try again.
+- A valid call runs in its own transaction: committed when the tool returns, rolled back if it raises. A tool that raises returns `{"status": "error"}` and the exception is logged, so one bug does not end the conversation.
+- `None` fields are left out of the JSON, so the model does not see `"ticket_id": null` on every refund.
+
+Phase 4 plugs the registry into the agent loop.
 
 ## Schema changes
 
@@ -150,7 +158,7 @@ Passwords are a placeholder until phase 4 adds login; the seed can be re-run the
 - **Policy cases** (no database): every row of `policy.jsonl` is run through `evaluate_refund`, and the verdict and reason must match.
 - **Request checks** (no database): `check_quantity` with the full line, a partial return, units already refunded, rejected refunds not counting, one unit too many and a line already refunded in full.
 - **Boundaries** (no database): day 30 against day 31, 60 against 61 for Plus, $200.00 against $200.01, the third refund against the fourth, a refund exactly 90 days old, and the rule order (a defect claim on a final-sale item still goes to manual review).
-- **Scoping** (database): a customer cannot read, refund or ticket against another customer's order; unknown and foreign orders look the same; a `customer_id` argument is rejected.
+- **Scoping** (database): a customer cannot read, refund or ticket against another customer's order; unknown and foreign orders look the same; a `customer_id` argument is rejected by `dispatch` and writes nothing.
 - **Approval flow** (database): the verdict-to-row mapping above, then approve, reject, approving your own refund, approving as a non-approver, and deciding twice.
 - **Concurrency** (database): two simultaneous refunds at the limit produce one refund and one manual review.
 
@@ -162,7 +170,7 @@ The policy tests need no database or API key. The tool tests need Postgres, so t
 - [x] 2. Migration `0002` and the seed script.
 - [x] 3. The policy engine, until all cases pass.
 - [x] 4. The tools and `decide_refund`, with the scoping and approval tests.
-- [ ] 5. The registry and `dispatch`.
+- [x] 5. The registry and `dispatch`.
 - [ ] 6. The concurrency test and a pass over the rules against `POLICY_FACTS.md`. The concurrency test is written; the pass against the fact sheet is not.
 
 ## Gate check
