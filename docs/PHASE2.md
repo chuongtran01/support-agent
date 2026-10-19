@@ -18,7 +18,7 @@ The evals are the spec: the retrieval dataset is written before the retrieval co
 - [x] **Retrieval eval dataset**: `evals/datasets/retrieval.dev.jsonl` (59 rows) and `retrieval.test.jsonl` (23 rows). 82 questions with the documents that should be returned
 - [x] **Chunking and document loading**: `backend/app/retrieval/chunking.py` and `documents.py`. Heading-path chunking with paragraph, line and sentence fallbacks, and a front-matter parser that validates every knowledge-base file
 - [x] **SQLAlchemy and Alembic**: `backend/app/models.py`, `backend/migrations/`. Async SQLAlchemy 2.0 models for all nine tables and an Alembic migration replace `db/init/001_schema.sql`; `make migrate` builds the schema
-- [ ] **Ingestion script**: `backend/app/retrieval/ingest.py`. Parses documents, chunks by heading, embeds, upserts into `documents` and `chunks`
+- [ ] **Ingestion script**: `backend/app/retrieval/ingest.py` and `embeddings.py`. Two stages: files into `documents`, then documents into embedded `chunks`. Written and tested with a fake embedder; stage 1 has run against the database, stage 2 waits for `OPENAI_API_KEY`
 - [ ] **Retrieval module**: `backend/app/retrieval/search.py`. Keyword, vector and hybrid search behind one interface
 - [ ] **Retrieval eval runner**: `evals/retrieval_eval.py`. Computes recall@5 and MRR per search mode and writes a results file
 - [ ] **Tests**: `backend/tests/`. Chunking and document-loading tests are done (31 passing, including a pass over the real knowledge base); fusion tests are still to write
@@ -57,13 +57,21 @@ Each trap maps to one eval case in `traps.yaml`. Document contents are settled a
 
 ## Ingestion
 
-1. Read each Markdown file, split off its front matter, and hash the file. Skip any document whose `content_hash` already matches the database.
-2. Split by heading. Each chunk stores `heading_path` (for example `Returns Policy > Exceptions > Final sale`) and `content`.
-3. Keep chunks small. A section that runs long is split on paragraph boundaries, and the heading path is repeated on every piece.
-4. Embed `heading_path` plus `content` with `text-embedding-3-small`, in batches.
-5. Upsert the document row (including the full `content` and `content_hash`), then replace its chunks, so re-running ingestion is idempotent.
+Two stages, run with `python -m app.retrieval.ingest [--stage documents|chunks|all] [--rebuild-all]` from `backend/`.
 
-Embedding the whole corpus needs `OPENAI_API_KEY` and costs very little at this size.
+**Stage 1: files into `documents`** (no API key needed)
+
+1. Read each Markdown file, split off its front matter, and hash the file.
+2. Compare with the stored `content_hash`. New files are added; files whose hash changed are updated and lose their chunks; stored documents with no file are removed (their chunks go with them).
+
+**Stage 2: documents into `chunks`**
+
+1. Take every document that has no chunks (all documents with `--rebuild-all`, for example after a chunking change).
+2. Split each stored `content` by heading. Each chunk stores `heading_path` (for example `Returns Policy > Exceptions > Final sale`) and `content`; a section that runs long is split on paragraph boundaries and the heading path is repeated on every piece.
+3. Embed `heading_path` plus `content` with `text-embedding-3-small`, in batches of 100.
+4. Replace the document's chunks, so re-running ingestion changes nothing.
+
+Stage 2 builds chunks from the database, not the files, so the files are only read in stage 1. Embedding the whole corpus (174 chunks) needs `OPENAI_API_KEY` and costs a fraction of a cent.
 
 ## Retrieval
 
@@ -92,7 +100,7 @@ The reranker is not part of this phase. `search.py` leaves a clear seam after fu
 - [x] 2. Write the trap documents by hand and fill in `traps.yaml`.
 - [x] 3. Write the filler articles and check them against the fact sheet.
 - [x] 4. Write the retrieval eval dataset.
-- [ ] 5. Implement chunking and ingestion, with unit tests for chunking. Chunking and document loading are done; embedding and database ingestion are not.
+- [ ] 5. Implement chunking and ingestion, with unit tests for chunking. Chunking, document loading and both ingestion stages are written; the embedding run needs an API key.
 - [ ] 6. Implement keyword, vector and hybrid search.
 - [ ] 7. Run the eval, tune chunk size once if the buried-exception case fails, and record the baseline.
 
