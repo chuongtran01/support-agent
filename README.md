@@ -23,6 +23,30 @@ make install
 make migrate
 ```
 
+## Load the knowledge base
+
+Set `OPENAI_API_KEY` in `.env` (embeddings use `text-embedding-3-small`), then:
+
+```sh
+cd backend
+.venv/bin/python -m app.retrieval.ingest                      # both stages
+.venv/bin/python -m app.retrieval.ingest --stage documents    # files into documents, no API key
+.venv/bin/python -m app.retrieval.ingest --stage chunks       # chunk and embed documents without chunks
+.venv/bin/python -m app.retrieval.ingest --rebuild-all        # re-chunk and re-embed everything
+```
+
+Re-running is safe: unchanged files are skipped, and only documents without chunks are embedded.
+
+## Run the retrieval eval
+
+```sh
+make eval-retrieval                              # dev split, keyword, vector and hybrid
+make eval-retrieval ARGS="--modes keyword"       # one mode; keyword needs no API key
+make eval-retrieval ARGS="--split test"          # held-out split; do not tune on it
+```
+
+It prints recall@5, MRR and the other metrics per mode and writes a JSON file with every question's ranked results to `evals/results/` (git-ignored). Details and the recorded baseline are in `docs/PHASE2.md`.
+
 ## Changing the schema
 
 Edit the models in `backend/app/models.py`, then generate and apply a migration:

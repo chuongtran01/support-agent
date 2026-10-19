@@ -1,6 +1,6 @@
 # Phase 2: Knowledge base and retrieval
 
-**Status:** in progress (steps 1 to 6 of 7 done; step 7 started: dev results below, test split and baseline not yet recorded)
+**Status:** done
 **Gate:** recall@5 baseline set
 
 ## Goal
@@ -100,9 +100,19 @@ The reranker is not part of this phase. `search.py` leaves a clear seam after fu
 - **Report.** One row per mode (keyword, vector, hybrid) plus recall by category, printed and written to `evals/results/` (git-ignored) with every question's ranked results. Run `make eval-retrieval`; pass `ARGS="--split test"` for the held-out split or `ARGS="--modes keyword"` to run without an API key. Numbers go in the README once they are stable.
 - **No-answer threshold.** For the no-answer questions, record the top score per mode. The distribution against answerable questions suggests the threshold the agent uses to say "I don't know"; the agent phase applies it.
 
-### Dev results so far
+### Baseline
 
-First run on the dev split (59 questions, 54 answerable), before any tuning. The test split has not been run. Differences of one or two questions are within noise at this size.
+No tuning was done: chunking, fusion and the keyword query are as first built, apart from the keyword change described under Retrieval. The test split was run once, after the dev run, and nothing was changed afterwards. Both splits are small, so differences of one or two questions are within noise.
+
+**Test split** (23 questions, 22 answerable), the headline numbers:
+
+| Mode | recall@5 | MRR | all docs @5 | Distractor first |
+| --- | --- | --- | --- | --- |
+| Keyword | 0.909 | 0.629 | 0.727 | 0 of 1 |
+| Vector | 1.000 | 0.947 | 0.864 | 1 of 1 |
+| Hybrid | 1.000 | 0.837 | 0.818 | 0 of 1 |
+
+**Dev split** (59 questions, 54 answerable):
 
 | Mode | recall@5 | MRR | all docs @5 | Distractor first |
 | --- | --- | --- | --- | --- |
@@ -110,9 +120,13 @@ First run on the dev split (59 questions, 54 answerable), before any tuning. The
 | Vector | 0.964 | 0.890 | 0.855 | 2 of 3 |
 | Hybrid | 0.945 | 0.895 | 0.818 | 0 of 3 |
 
-- Vector search beats keyword mainly on the messy and support questions (messy: 0.50 keyword, 0.83 vector and hybrid).
-- Hybrid does not beat vector on recall@5; it has a similar MRR and keeps the stale shipping page below the current one, which vector does not.
-- No-answer top scores for vector have a median of 0.375 against 0.633 for answerable questions, but the ranges overlap (no-answer maximum 0.514, answerable minimum 0.396), so no threshold separates them cleanly. Hybrid's scores are rank-based and say nothing about relevance.
+**What the numbers say**
+
+- Vector search beats keyword, mainly on the messy and support questions on dev (messy: 0.50 keyword, 0.83 vector and hybrid) and on MRR on both splits.
+- Hybrid did not beat vector on either split. Recall@5 is equal or lower, and MRR is level on dev (0.895 against 0.890) and lower on test (0.837 against 0.947). The reranker ablation in phase 6 will show whether reranking the fused candidates changes that.
+- The stale shipping page ranked above the current one for vector (2 of 3 dev rows, the 1 test row) and never for keyword or hybrid. The sample is four rows, so this is a signal and not a result.
+- No-answer top scores for vector have a median of 0.375 against 0.633 for answerable questions on dev, and 0.390 against 0.657 on test, but the ranges overlap on dev (no-answer maximum 0.514, answerable minimum 0.396), so no threshold separates them cleanly. Hybrid's scores are rank-based and say nothing about relevance.
+- The test split has one no-answer row, one distractor row and one multi-article row, so those columns say little on test.
 
 ## Build order
 
@@ -122,14 +136,14 @@ First run on the dev split (59 questions, 54 answerable), before any tuning. The
 - [x] 4. Write the retrieval eval dataset.
 - [x] 5. Implement chunking and ingestion, with unit tests for chunking.
 - [x] 6. Implement keyword, vector and hybrid search.
-- [ ] 7. Run the eval, tune chunk size once if the buried-exception case fails, and record the baseline. The dev eval has run for all three modes with no tuning; the baseline still needs a decision on tuning and a run of the test split.
+- [x] 7. Run the eval, tune chunk size once if the buried-exception case fails, and record the baseline. The buried-exception questions score 1.00 on both splits in every mode, so no tuning was done.
 
 ## Gate check
 
 - [x] **Ingestion**: `documents` and `chunks` populated; re-running changes nothing
 - [x] **Trap coverage**: every `traps.yaml` entry except the no-answer trap lists real document ids
 - [x] **Retrieval eval**: runs for all three modes and writes recall@5 and MRR
-- [ ] **Baseline**: numbers recorded in this file or the README
+- [x] **Baseline**: numbers recorded in this file or the README
 - [x] **Tests**: `pytest` passes without a database or API key
 
 ## Open questions
