@@ -1,6 +1,6 @@
 # Phase 2: Knowledge base and retrieval
 
-**Status:** in progress (steps 1 to 4 of 7 done)
+**Status:** in progress (steps 1 to 6 of 7 done; step 7 started: dev results below, test split and baseline not yet recorded)
 **Gate:** recall@5 baseline set
 
 ## Goal
@@ -18,10 +18,10 @@ The evals are the spec: the retrieval dataset is written before the retrieval co
 - [x] **Retrieval eval dataset**: `evals/datasets/retrieval.dev.jsonl` (59 rows) and `retrieval.test.jsonl` (23 rows). 82 questions with the documents that should be returned
 - [x] **Chunking and document loading**: `backend/app/retrieval/chunking.py` and `documents.py`. Heading-path chunking with paragraph, line and sentence fallbacks, and a front-matter parser that validates every knowledge-base file
 - [x] **SQLAlchemy and Alembic**: `backend/app/models.py`, `backend/migrations/`. Async SQLAlchemy 2.0 models for all nine tables and an Alembic migration replace `db/init/001_schema.sql`; `make migrate` builds the schema
-- [ ] **Ingestion script**: `backend/app/retrieval/ingest.py` and `embeddings.py`. Two stages: files into `documents`, then documents into embedded `chunks`. Written and tested with a fake embedder; stage 1 has run against the database, stage 2 waits for `OPENAI_API_KEY`
-- [ ] **Retrieval module**: `backend/app/retrieval/search.py`. Keyword, vector and hybrid search behind one interface. Written and unit-tested; keyword and the SQL for all three modes ran against the database, vector quality waits for real embeddings
-- [ ] **Retrieval eval runner**: `evals/retrieval_eval.py`. Computes recall@5 and MRR per search mode and writes a results file
-- [ ] **Tests**: `backend/tests/`. Chunking and document-loading tests are done (31 passing, including a pass over the real knowledge base); fusion tests are still to write
+- [x] **Ingestion script**: `backend/app/retrieval/ingest.py` and `embeddings.py`. Two stages: files into `documents`, then documents into embedded `chunks`. All 51 documents and 174 chunks are loaded; a second run writes nothing
+- [x] **Retrieval module**: `backend/app/retrieval/search.py`. Keyword, vector and hybrid search behind one `search()` function, with reciprocal rank fusion and a marked seam for the phase 6 reranker
+- [x] **Retrieval eval runner**: `evals/retrieval_eval.py` (`make eval-retrieval`). Validates the dataset, scores each mode on the chosen split and writes a results file
+- [x] **Tests**: `backend/tests/`. 63 passing without a database or API key: chunking (including a pass over the real knowledge base), document loading, ingestion sync planning, models, reciprocal rank fusion, the health endpoint, and the eval runner's metrics and dataset validation
 
 ## Knowledge base
 
@@ -92,9 +92,27 @@ The reranker is not part of this phase. `search.py` leaves a clear seam after fu
 - **Dataset.** Two files, one JSON object per line: `evals/datasets/retrieval.dev.jsonl` (59 rows) and `evals/datasets/retrieval.test.jsonl` (23 rows). Every row has the same nine fields, with an empty value where one does not apply: `id`, `category`, `question`, `relevant_document_ids`, `relevant_heading_paths` (used for the buried exception), `distractor_document_ids` (the stale page must not outrank the current one), `expect_no_answer` (false by default), `trap_id` (links to `traps.yaml`, null for ordinary questions) and `note` (null by default). Ids are unique across both files. The eval runner validates each row against one Pydantic model and fails on a missing or unknown field, an unknown document id, or an id or question that appears in both files.
 - **Coverage.** 48 ordinary questions across returns, shipping, warranty, membership, billing, support and product care; 8 messy questions (typos, fragments); 5 questions that need two articles; 17 trap questions (the 5 originals plus 3 variants each for the conflict, buried-exception, stale-page and injection traps); 4 off-topic questions. The 5 rows flagged `expect_no_answer` are the price-match trap plus the 4 off-topic ones.
 - **Dev and test.** The dev file is for tuning chunking and fusion, and it is the only file the runner reads by default. The test file is held out and is read only with an explicit `--split test` flag; its scores are the headline numbers. The four traps with variants each have one test row, the price-match trap is dev only (one off-topic no-answer row is in test instead), and every third row of the other categories is held out. `r001` to `r057` were written first; `r058` to `r082` were added before any baseline was run. If someone writes extra questions without reading the articles, they go in the test file.
-- **Metrics.** recall@5 (is a relevant chunk in the top 5) and MRR (how high the first relevant chunk ranks).
-- **Report.** One row per mode (keyword, vector, hybrid), written to `evals/results/` (git-ignored) and summarized in the README once numbers are stable.
+- **Metrics.** Each question retrieves 10 chunks. A chunk is relevant if it is in a relevant document and, when the row names heading paths, under one of them. Computed over answerable questions:
+  - **recall@5**: the share of questions with a relevant chunk in the top 5.
+  - **MRR**: the mean of 1 / rank of the first relevant chunk (0 when none is in the top 10).
+  - **all docs @5**: the share of questions where every relevant document has a relevant chunk in the top 5; it differs from recall@5 only on the questions that need two articles.
+  - **distractor first**: among rows with a distractor, the share where a distractor chunk ranks above the first relevant one (lower is better).
+- **Report.** One row per mode (keyword, vector, hybrid) plus recall by category, printed and written to `evals/results/` (git-ignored) with every question's ranked results. Run `make eval-retrieval`; pass `ARGS="--split test"` for the held-out split or `ARGS="--modes keyword"` to run without an API key. Numbers go in the README once they are stable.
 - **No-answer threshold.** For the no-answer questions, record the top score per mode. The distribution against answerable questions suggests the threshold the agent uses to say "I don't know"; the agent phase applies it.
+
+### Dev results so far
+
+First run on the dev split (59 questions, 54 answerable), before any tuning. The test split has not been run. Differences of one or two questions are within noise at this size.
+
+| Mode | recall@5 | MRR | all docs @5 | Distractor first |
+| --- | --- | --- | --- | --- |
+| Keyword | 0.891 | 0.791 | 0.727 | 0 of 3 |
+| Vector | 0.964 | 0.890 | 0.855 | 2 of 3 |
+| Hybrid | 0.945 | 0.895 | 0.818 | 0 of 3 |
+
+- Vector search beats keyword mainly on the messy and support questions (messy: 0.50 keyword, 0.83 vector and hybrid).
+- Hybrid does not beat vector on recall@5; it has a similar MRR and keeps the stale shipping page below the current one, which vector does not.
+- No-answer top scores for vector have a median of 0.375 against 0.633 for answerable questions, but the ranges overlap (no-answer maximum 0.514, answerable minimum 0.396), so no threshold separates them cleanly. Hybrid's scores are rank-based and say nothing about relevance.
 
 ## Build order
 
@@ -102,17 +120,17 @@ The reranker is not part of this phase. `search.py` leaves a clear seam after fu
 - [x] 2. Write the trap documents by hand and fill in `traps.yaml`.
 - [x] 3. Write the filler articles and check them against the fact sheet.
 - [x] 4. Write the retrieval eval dataset.
-- [ ] 5. Implement chunking and ingestion, with unit tests for chunking. Chunking, document loading and both ingestion stages are written; the embedding run needs an API key.
-- [ ] 6. Implement keyword, vector and hybrid search. Written; checked with fake embeddings only.
-- [ ] 7. Run the eval, tune chunk size once if the buried-exception case fails, and record the baseline.
+- [x] 5. Implement chunking and ingestion, with unit tests for chunking.
+- [x] 6. Implement keyword, vector and hybrid search.
+- [ ] 7. Run the eval, tune chunk size once if the buried-exception case fails, and record the baseline. The dev eval has run for all three modes with no tuning; the baseline still needs a decision on tuning and a run of the test split.
 
 ## Gate check
 
-- [ ] **Ingestion**: `documents` and `chunks` populated; re-running changes nothing
+- [x] **Ingestion**: `documents` and `chunks` populated; re-running changes nothing
 - [x] **Trap coverage**: every `traps.yaml` entry except the no-answer trap lists real document ids
-- [ ] **Retrieval eval**: runs for all three modes and writes recall@5 and MRR
+- [x] **Retrieval eval**: runs for all three modes and writes recall@5 and MRR
 - [ ] **Baseline**: numbers recorded in this file or the README
-- [ ] **Tests**: `pytest` passes without a database or API key
+- [x] **Tests**: `pytest` passes without a database or API key
 
 ## Open questions
 
