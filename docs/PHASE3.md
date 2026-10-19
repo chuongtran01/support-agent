@@ -1,6 +1,6 @@
 # Phase 3: Policy engine and tools
 
-**Status:** in progress (step 1 of 6 done)
+**Status:** in progress (steps 1 and 3 of 6 done)
 **Gate:** policy tests pass, no LLM
 
 ## Goal
@@ -14,7 +14,7 @@ The evals are the spec: the policy cases are written before the engine they meas
 - [x] **Policy cases**: `evals/datasets/policy.jsonl`. 45 scenarios, each with the facts of the situation and the expected verdict and reason; covers every rule, its boundaries and the order the rules are checked in
 - [ ] **Schema changes**: Alembic migration `0002`. `order_items.category`, `refunds.order_item_id`, `refunds.quantity` and `tickets.kind`
 - [ ] **Seed data**: `backend/app/seed.py`. Customers (including an approver), orders, items and refund history that exercise every policy case; relative to the current date so windows stay valid
-- [ ] **Policy engine**: `backend/app/policy/`. A pure function that takes a refund request and the facts about it and returns a verdict; no database and no model
+- [x] **Policy engine**: `backend/app/policy/engine.py`. A pure function that takes a refund request and the facts about it and returns a verdict; no database and no model. All 45 policy cases pass
 - [ ] **Tools**: `backend/app/tools/`. The four tools, each scoped to the session's customer, plus the approver actions
 - [ ] **Tool registry**: `backend/app/tools/registry.py`. Name, argument model and handler for each tool, with JSON schemas ready for OpenAI function calling and a `dispatch` function that validates arguments
 - [ ] **Tests**: `backend/tests/`. Policy cases, rule boundaries, customer scoping, the approval flow and the refund-limit race
@@ -28,8 +28,9 @@ evaluate_refund(request, facts, now) -> Verdict
 ```
 
 - `request`: the order item, the number of units being returned and the reason code (`changed_mind`, `defect` or `our_error`). There is no amount: the model never chooses how much money moves.
-- `facts`: what the database says about the situation: the customer's membership, the order's `delivered_at`, the item's `is_final_sale`, `category`, price paid per unit, and the age of each of the customer's earlier refunds. By the time the engine runs, the request has already been checked as valid (see Tools), so it never has to decide whether the quantity makes sense.
-- `Verdict`: an outcome (`allowed`, `denied`, `needs_approval` or `manual_review`), a short reason code and a message the agent can pass on to the customer.
+- `facts`: what the database says about the situation: the customer's membership, the order's `delivered_at`, the item's `is_final_sale`, `category`, price paid per unit, and the date of each of the customer's earlier refunds that count. By the time the engine runs, the request has already been checked as valid (see Tools), so it never has to decide whether the quantity makes sense.
+- `Verdict`: an outcome (`allowed`, `denied`, `needs_approval` or `manual_review`), a short reason code, a message the agent can pass on to the customer, and the refund amount (price per unit times quantity) so the tool writes the figure the engine checked.
+- `PolicyConfig`: the numbers the rules use (windows, frequency limit, approval threshold), in one place. The tool layer builds it from `REFUND_APPROVAL_THRESHOLD`.
 
 ### Rules
 
@@ -47,8 +48,8 @@ The checks run in this order, and the first one that fires decides the outcome.
 | 8 | None of the above | allowed | `ok` |
 
 - **Defects and our errors go to a human.** The policy sheet says defects are covered by warranty regardless of the window or final-sale status, and warranty claims need photos and a review. The engine cannot check a claim, so it never lets a stated reason unlock an exception on its own (rule 3 comes before the final-sale and window checks).
-- **Window.** Day 30 after delivery is still inside the window and day 31 is outside, counted in calendar days. The membership tier is read when the request is made.
-- **Frequency.** Refunds count if they are `pending`, `approved` or `completed` and were made 89 days ago or less; one made 90 days ago no longer counts. A rejected refund does not count. The engine receives the age in days of each countable refund, so the boundary is tested without a database.
+- **Window.** Day 30 after delivery is still inside the window and day 31 is outside, counted in calendar days in UTC (so a delivery at 11:59 p.m. and a request at 12:01 a.m. 30 days later is day 30). The engine rejects times without a timezone. The membership tier is read when the request is made.
+- **Frequency.** Refunds count if they are `pending`, `approved` or `completed` and were made 89 days ago or less; one made 90 days ago no longer counts. A rejected refund does not count. The engine receives the date of each countable refund and works out the age itself, so the boundary is tested without a database.
 - **Threshold.** "Over $200" means strictly more than 20,000 cents; exactly $200 is allowed. The value comes from `REFUND_APPROVAL_THRESHOLD`.
 - **The amount comes from the order.** The engine computes it as the price paid per unit times the units returned. The price paid is `order_items.price_cents`, which is saved on the order line when the order is placed, so it is what the customer paid and not today's price. A partial refund is a smaller number of units, and a refund of part of one unit's price (a goodwill discount) is not automatic, so the agent opens a ticket for it.
 - **Not modeled.** Conditions the data cannot show (unused, original packaging, opened consumables, the tent trial pitch); the $7.95 return-label fee; discounts, so `price_cents` must hold the net price paid; sales tax; and shipping charges, which are refunded only for defects and our errors, and those already go to a human. The agent handles the first group from the knowledge base and a ticket.
@@ -72,6 +73,8 @@ The checks run in this order, and the first one that fires decides the outcome.
 | `note` | Extra explanation, null by default |
 
 The 45 rows are grouped as: happy path 5, delivery 2, window 10, gift card 3, human review 6, final sale 4, frequency 7, threshold 5 and rule order 3. Every reason code has at least two rows. The rule order rows put two rules in conflict, for example a final-sale item outside the window, so the first rule in the table has to win.
+
+The test turns the days-ago values into timestamps relative to a fixed clock and passes them to the engine, which works out the ages itself.
 
 The expected values were cross-checked against a separate throwaway implementation of the rule table before the engine existed, and no row disagreed.
 
@@ -151,15 +154,15 @@ The policy tests need no database or API key. The tool tests need Postgres, so t
 
 - [x] 1. Write the policy cases, including boundaries, and review them.
 - [ ] 2. Migration `0002` and the seed script.
-- [ ] 3. The policy engine, until all cases pass.
+- [x] 3. The policy engine, until all cases pass.
 - [ ] 4. The tools and `decide_refund`, with the scoping and approval tests.
 - [ ] 5. The registry and `dispatch`.
 - [ ] 6. The concurrency test and a pass over the rules against `POLICY_FACTS.md`.
 
 ## Gate check
 
-- [ ] **Policy engine**: every policy case passes
-- [ ] **Boundaries**: window, threshold and frequency edges are tested
+- [x] **Policy engine**: every policy case passes
+- [x] **Boundaries**: window, threshold and frequency edges are tested
 - [ ] **Scoping**: no tool reads or changes another customer's data
 - [ ] **Approval flow**: approver rules are tested
 - [ ] **Seed data**: loads on a fresh database and can be re-run
