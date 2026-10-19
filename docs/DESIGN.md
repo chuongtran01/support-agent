@@ -140,7 +140,7 @@ Six phases, each ending in a gate that must pass before the next starts.
 | # | Phase | Deliverables | Gate |
 | --- | --- | --- | --- |
 | 1 | Foundation (done) | Repo, Docker Compose, schema, backend stub, traps manifest | Schema loads, `/health` ok |
-| 2 | Knowledge base and retrieval | Trap and filler docs, ingestion, hybrid search, retrieval evals | recall@5 baseline set |
+| 2 | Knowledge base and retrieval (done) | Trap and filler docs, ingestion, hybrid search, retrieval evals | recall@5 baseline set |
 | 3 | Policy engine and tools | Refund and return rules, approval gate, scoped tools, unit tests | Policy tests pass, no LLM |
 | 4 | Agent loop and API | Agent loop, escalation, sessions and auth, streaming API | Trap and tool evals run |
 | 5 | Frontend | Next.js chat with streaming, refund approval page | Full demo flow works |
