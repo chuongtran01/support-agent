@@ -1,6 +1,6 @@
 # Phase 3: Policy engine and tools
 
-**Status:** in progress (steps 1 to 3 of 6 done)
+**Status:** in progress (steps 1 to 4 of 6 done)
 **Gate:** policy tests pass, no LLM
 
 ## Goal
@@ -15,7 +15,7 @@ The evals are the spec: the policy cases are written before the engine they meas
 - [x] **Schema changes**: Alembic migration `0002`. `order_items.category`, `refunds.order_item_id`, `refunds.quantity` and `tickets.kind`
 - [x] **Seed data**: `backend/app/seed.py` (`make seed`). 6 customers (including an approver), 25 orders and 8 refunds that exercise the window, frequency and approval rules; dates are relative to now so the boundaries stay in place
 - [x] **Policy engine**: `backend/app/policy/engine.py`. A pure function that takes a refund request and the facts about it and returns a verdict; no database and no model. All 45 policy cases pass
-- [ ] **Tools**: `backend/app/tools/`. The four tools, each scoped to the session's customer, plus the approver actions
+- [x] **Tools**: `backend/app/tools/`. The four tools, each scoped to the session's customer, plus `decide_refund` for approvers (in `refunds.py`, not callable by the agent)
 - [ ] **Tool registry**: `backend/app/tools/registry.py`. Name, argument model and handler for each tool, with JSON schemas ready for OpenAI function calling and a `dispatch` function that validates arguments
 - [ ] **Tests**: `backend/tests/`. Policy cases, rule boundaries, customer scoping, the approval flow and the refund-limit race
 
@@ -108,7 +108,9 @@ What `issue_refund` does with each verdict:
 | `manual_review` | Writes no refund; opens a ticket of kind `manual_review` with the reason |
 | `denied` | Writes nothing; returns the reason and message |
 
-The tool locks the customer's row while it counts earlier refunds and inserts the new one, so two refund requests arriving together cannot both slip under the 3-in-90-days limit.
+The tool locks the customer's row (`SELECT ... FOR UPDATE`) while it counts earlier refunds and inserts the new one, so two refund requests arriving together cannot both slip under the 3-in-90-days limit. The concurrency test fails without the lock and passes with it.
+
+**Conventions.** Tools are async functions that take a `ToolContext` (the database session, the session's `customer_id` and a clock) followed by the model's arguments. They run inside the caller's transaction and never commit: the dispatcher opens one transaction per call, so a tool that fails halfway writes nothing. Every tool returns a typed Pydantic result from `app/tools/results.py` with a `status` from a fixed set; the registry turns it into JSON for the model. `issue_refund` uses the verdict (`allowed`, `denied`, `needs_approval`, `manual_review`) or `not_found` or `invalid_request`, and also returns the reason, the message, the amount, and the refund or ticket id if one was written. Writes use the context's clock, so tests control time.
 
 ### Approver actions
 
@@ -159,16 +161,16 @@ The policy tests need no database or API key. The tool tests need Postgres, so t
 - [x] 1. Write the policy cases, including boundaries, and review them.
 - [x] 2. Migration `0002` and the seed script.
 - [x] 3. The policy engine, until all cases pass.
-- [ ] 4. The tools and `decide_refund`, with the scoping and approval tests.
+- [x] 4. The tools and `decide_refund`, with the scoping and approval tests.
 - [ ] 5. The registry and `dispatch`.
-- [ ] 6. The concurrency test and a pass over the rules against `POLICY_FACTS.md`.
+- [ ] 6. The concurrency test and a pass over the rules against `POLICY_FACTS.md`. The concurrency test is written; the pass against the fact sheet is not.
 
 ## Gate check
 
 - [x] **Policy engine**: every policy case passes
 - [x] **Boundaries**: window, threshold and frequency edges are tested
-- [ ] **Scoping**: no tool reads or changes another customer's data
-- [ ] **Approval flow**: approver rules are tested
+- [x] **Scoping**: no tool reads or changes another customer's data
+- [x] **Approval flow**: approver rules are tested
 - [x] **Seed data**: loads on a fresh database and can be re-run
 - [ ] **No LLM**: the whole phase runs without an API key
 
