@@ -23,6 +23,12 @@ make install
 make migrate
 ```
 
+## Seed the demo data
+
+```sh
+make seed    # customers, orders and refunds; safe to re-run, leaves the knowledge base alone
+```
+
 ## Load the knowledge base
 
 Set `OPENAI_API_KEY` in `.env` (embeddings use `text-embedding-3-small`), then:

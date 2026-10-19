@@ -70,8 +70,19 @@ class Order(Base):
     total_cents: Mapped[int] = mapped_column(Integer)
 
 
+ITEM_CATEGORIES = ("gift_card", "tent", "pack", "footwear", "apparel", "consumable", "other")
+TICKET_KINDS = ("support", "escalation", "manual_review")
+
+
+def _in(column: str, values: tuple[str, ...]) -> str:
+    return f"{column} IN ({', '.join(repr(value) for value in values)})"
+
+
 class OrderItem(Base):
     __tablename__ = "order_items"
+    __table_args__ = (
+        CheckConstraint(_in("category", ITEM_CATEGORIES), name="order_items_category_check"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"))
@@ -80,6 +91,7 @@ class OrderItem(Base):
     price_cents: Mapped[int] = mapped_column(Integer)
     quantity: Mapped[int] = mapped_column(Integer, server_default="1")
     is_final_sale: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
+    category: Mapped[str] = mapped_column(Text, server_default="other")
 
 
 class Refund(Base):
@@ -89,12 +101,15 @@ class Refund(Base):
             "status IN ('pending', 'approved', 'rejected', 'completed')",
             name="refunds_status_check",
         ),
+        CheckConstraint("quantity > 0", name="refunds_quantity_check"),
         Index("refunds_customer_id_created_at_idx", "customer_id", "created_at"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"))
+    order_item_id: Mapped[int] = mapped_column(ForeignKey("order_items.id"))
     customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id"))
+    quantity: Mapped[int] = mapped_column(Integer, server_default="1")
     amount_cents: Mapped[int] = mapped_column(Integer)
     reason: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(Text)
@@ -105,13 +120,17 @@ class Refund(Base):
 
 class Ticket(Base):
     __tablename__ = "tickets"
-    __table_args__ = (CheckConstraint("status IN ('open', 'closed')", name="tickets_status_check"),)
+    __table_args__ = (
+        CheckConstraint("status IN ('open', 'closed')", name="tickets_status_check"),
+        CheckConstraint(_in("kind", TICKET_KINDS), name="tickets_kind_check"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id"))
     subject: Mapped[str] = mapped_column(Text)
     body: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(Text, server_default="open")
+    kind: Mapped[str] = mapped_column(Text, server_default="support")
     created_at: Mapped[datetime] = _created_at()
 
 

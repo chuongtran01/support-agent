@@ -1,6 +1,6 @@
 # Phase 3: Policy engine and tools
 
-**Status:** in progress (steps 1 and 3 of 6 done)
+**Status:** in progress (steps 1 to 3 of 6 done)
 **Gate:** policy tests pass, no LLM
 
 ## Goal
@@ -12,8 +12,8 @@ The evals are the spec: the policy cases are written before the engine they meas
 ## Deliverables
 
 - [x] **Policy cases**: `evals/datasets/policy.jsonl`. 45 scenarios, each with the facts of the situation and the expected verdict and reason; covers every rule, its boundaries and the order the rules are checked in
-- [ ] **Schema changes**: Alembic migration `0002`. `order_items.category`, `refunds.order_item_id`, `refunds.quantity` and `tickets.kind`
-- [ ] **Seed data**: `backend/app/seed.py`. Customers (including an approver), orders, items and refund history that exercise every policy case; relative to the current date so windows stay valid
+- [x] **Schema changes**: Alembic migration `0002`. `order_items.category`, `refunds.order_item_id`, `refunds.quantity` and `tickets.kind`
+- [x] **Seed data**: `backend/app/seed.py` (`make seed`). 6 customers (including an approver), 25 orders and 8 refunds that exercise the window, frequency and approval rules; dates are relative to now so the boundaries stay in place
 - [x] **Policy engine**: `backend/app/policy/engine.py`. A pure function that takes a refund request and the facts about it and returns a verdict; no database and no model. All 45 policy cases pass
 - [ ] **Tools**: `backend/app/tools/`. The four tools, each scoped to the session's customer, plus the approver actions
 - [ ] **Tool registry**: `backend/app/tools/registry.py`. Name, argument model and handler for each tool, with JSON schemas ready for OpenAI function calling and a `dispatch` function that validates arguments
@@ -130,12 +130,16 @@ Migration `0002` adds what the rules need:
 
 ## Seed data
 
-`python -m app.seed` clears and reloads the business tables, so it can be run again at any time. Dates are written relative to now. The set includes:
+`python -m app.seed` (or `make seed`) truncates the business tables (customers, orders, items, refunds, tickets and chat data) and reloads them, so it can be run again at any time and gives the same ids. The knowledge base is untouched. Dates are written relative to now. The set:
 
-- A Basic customer, a Plus customer and an approver.
-- Orders delivered 5, 29, 30, 31, 45 and 61 days ago, which cover both window boundaries.
-- Items that are final sale, gift cards, tents, packs, priced under and over $200, and lines with more than one unit.
-- Refund history for one customer with 3 refunds in the last 90 days and one whose oldest refund is 91 days old.
+| Customer | Membership | What their data is for |
+| --- | --- | --- |
+| Alex | basic | Orders delivered 5, 29, 30, 31 and 45 days ago (the 30-day boundary); a shipped order; a final-sale item; a gift card; a three-unit line with one unit already refunded |
+| Priya | plus | Orders delivered 45, 60 and 61 days ago (the 60-day boundary); items over $200 (tent, pack, parka); a pending $240 refund waiting for an approver |
+| Sam | none | A consumable delivered 30 days ago, a stove delivered 31 days ago, an order still processing |
+| Jordan | basic | Three completed refunds 5, 30 and 60 days ago, so the next request goes to manual review |
+| Morgan | basic | Three completed refunds 20, 45 and 91 days ago, so only two count and the next request is allowed |
+| Taylor | approver | The approver account |
 
 Passwords are a placeholder until phase 4 adds login; the seed can be re-run then.
 
@@ -148,12 +152,12 @@ Passwords are a placeholder until phase 4 adds login; the seed can be re-run the
 - **Approval flow** (database): the verdict-to-row mapping above, then approve, reject, approving your own refund, approving as a non-approver, and deciding twice.
 - **Concurrency** (database): two simultaneous refunds at the limit produce one refund and one manual review.
 
-The policy tests need no database or API key. The tool tests need Postgres, so they run against a separate test database on the Compose container and are skipped when it is not reachable.
+The policy tests need no database or API key. The tool tests need Postgres, so they run against a separate test database on the Compose container and are skipped when it is not reachable (`tests/conftest.py` builds a `support_test` database with the real migrations and empties it after each test). The seed has its own database tests.
 
 ## Build order
 
 - [x] 1. Write the policy cases, including boundaries, and review them.
-- [ ] 2. Migration `0002` and the seed script.
+- [x] 2. Migration `0002` and the seed script.
 - [x] 3. The policy engine, until all cases pass.
 - [ ] 4. The tools and `decide_refund`, with the scoping and approval tests.
 - [ ] 5. The registry and `dispatch`.
@@ -165,7 +169,7 @@ The policy tests need no database or API key. The tool tests need Postgres, so t
 - [x] **Boundaries**: window, threshold and frequency edges are tested
 - [ ] **Scoping**: no tool reads or changes another customer's data
 - [ ] **Approval flow**: approver rules are tested
-- [ ] **Seed data**: loads on a fresh database and can be re-run
+- [x] **Seed data**: loads on a fresh database and can be re-run
 - [ ] **No LLM**: the whole phase runs without an API key
 
 ## Decisions to confirm

@@ -1,4 +1,4 @@
-.PHONY: up down db-reset migrate install test lint eval-retrieval
+.PHONY: up down db-reset migrate seed install test lint eval-retrieval
 
 up:
 	docker compose up -d db
@@ -11,6 +11,9 @@ db-reset:
 
 migrate:
 	cd backend && .venv/bin/alembic upgrade head
+
+seed:
+	cd backend && .venv/bin/python -m app.seed
 
 install:
 	cd backend && python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
