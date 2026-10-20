@@ -4,21 +4,22 @@
 tickets and chat data) and reloads them. Dates are relative to now, so the return-window and
 refund-frequency boundaries are always in the same place. The knowledge base is untouched.
 
-Passwords are an unusable placeholder until phase 4 adds login.
+Every customer gets the password in the SEED_PASSWORD setting (``demo`` by default).
 """
 
 import asyncio
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from functools import cache
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
+from app.auth import hash_password
+from app.config import settings
 from app.db import SessionLocal, engine
-
-UNUSABLE_PASSWORD_HASH = "!"
 
 BUSINESS_TABLES = "chat_messages, chat_sessions, refunds, tickets, order_items, orders, customers"
 
@@ -42,8 +43,9 @@ class Seeded:
 
 
 class _Builder:
-    def __init__(self, session: AsyncSession, now: datetime):
+    def __init__(self, session: AsyncSession, now: datetime, password_hash: str):
         self.session = session
+        self.password_hash = password_hash
         self.now = now
         self.seeded = Seeded({}, {}, {}, [])
 
@@ -56,7 +58,7 @@ class _Builder:
             name=name,
             role=role,
             membership=membership,
-            password_hash=UNUSABLE_PASSWORD_HASH,
+            password_hash=self.password_hash,
         )
         self.session.add(row)
         await self.session.flush()
@@ -117,12 +119,20 @@ class _Builder:
         self.seeded.refunds.append(row)
 
 
-async def seed(session: AsyncSession, now: datetime | None = None) -> Seeded:
+@cache
+def _demo_hash(password: str) -> str:
+    # Hashing is slow on purpose; the tests seed often, so hash each password once per process
+    return hash_password(password)
+
+
+async def seed(
+    session: AsyncSession, now: datetime | None = None, password: str | None = None
+) -> Seeded:
     """Clear the business tables and load the demo data. The caller commits."""
     now = now or datetime.now(UTC)
     await session.execute(text(f"TRUNCATE {BUSINESS_TABLES} RESTART IDENTITY CASCADE"))
     session.expunge_all()  # rows from an earlier seed in this session no longer exist
-    b = _Builder(session, now)
+    b = _Builder(session, now, _demo_hash(password or settings.seed_password))
 
     await b.customer("alex", "Alex Rivera", "basic")
     await b.customer("priya", "Priya Shah", "plus")

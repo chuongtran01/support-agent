@@ -29,6 +29,8 @@ make migrate
 make seed    # customers, orders and refunds; safe to re-run, leaves the knowledge base alone
 ```
 
+Every demo customer logs in with the password in `SEED_PASSWORD` (`demo` by default), for example `alex@example.com` (a customer) or `approver@example.com` (can decide pending refunds).
+
 ## Load the knowledge base
 
 Set `OPENAI_API_KEY` in `.env` (embeddings use `text-embedding-3-small`), then:

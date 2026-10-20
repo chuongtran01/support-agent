@@ -11,5 +11,11 @@ class Settings(BaseSettings):
     embedding_model: str = "text-embedding-3-small"
     refund_approval_threshold: int = 200
 
+    # The default secret is for local development only; set JWT_SECRET anywhere else
+    jwt_secret: str = "dev-only-secret-change-me-before-deploying"
+    token_ttl_minutes: int = 480
+    # Every seeded demo customer logs in with this
+    seed_password: str = "demo"
+
 
 settings = Settings()
