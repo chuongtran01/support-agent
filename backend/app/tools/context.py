@@ -4,6 +4,8 @@ from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.retrieval.embeddings import Embedder
+
 
 def utc_now() -> datetime:
     return datetime.now(UTC)
@@ -17,3 +19,5 @@ class ToolContext:
     session: AsyncSession
     customer_id: int
     clock: Callable[[], datetime] = field(default=utc_now)
+    # Only search_knowledge uses it; the other tools never embed anything
+    embedder: Embedder | None = None

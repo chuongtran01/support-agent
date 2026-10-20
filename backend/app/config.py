@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     judge_model: str = "gpt-5-mini"
     embedding_model: str = "text-embedding-3-small"
     refund_approval_threshold: int = 200
+    # search_knowledge flags an answer as shaky when no passage is at least this similar
+    low_confidence_score: float = 0.45
 
     # The default secret is for local development only; set JWT_SECRET anywhere else
     jwt_secret: str = "dev-only-secret-change-me-before-deploying"

@@ -68,3 +68,19 @@ class DecisionResult(Result):
     ]
     message: str | None = None
     refund_id: int | None = None
+
+
+class PassageView(Result):
+    document_id: str
+    title: str
+    status: str
+    updated_at: str
+    heading_path: str
+    content: str
+
+
+class SearchKnowledgeResult(Result):
+    status: Literal["ok", "no_results"]
+    low_confidence: bool
+    message: str | None = None
+    passages: list[PassageView] = []

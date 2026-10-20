@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.policy.engine import ReasonCode
 from app.tools.context import ToolContext
+from app.tools.knowledge import MAX_QUERY, search_knowledge
 from app.tools.orders import lookup_order
 from app.tools.refunds import issue_refund
 from app.tools.results import Result
@@ -25,6 +26,14 @@ logger = logging.getLogger(__name__)
 
 class Arguments(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+class SearchKnowledgeArguments(Arguments):
+    query: str = Field(
+        min_length=1,
+        max_length=MAX_QUERY,
+        description="What to look up, in plain words. Include the product or topic.",
+    )
 
 
 class LookupOrderArguments(Arguments):
@@ -57,6 +66,14 @@ class ToolSpec:
 TOOLS: dict[str, ToolSpec] = {
     spec.name: spec
     for spec in (
+        ToolSpec(
+            "search_knowledge",
+            "Search the help articles. Use it for any question about policies, shipping, "
+            "returns, warranty, membership or how things work, and answer only from what it "
+            "returns. Each passage carries its document_id, status and date.",
+            SearchKnowledgeArguments,
+            search_knowledge,
+        ),
         ToolSpec(
             "lookup_order",
             "Look up one of the customer's orders: its items, delivery date, and any refunds "

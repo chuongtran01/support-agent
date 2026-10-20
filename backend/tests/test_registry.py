@@ -22,9 +22,15 @@ async def call(ctx, name, **arguments) -> dict:
 # Schemas ---------------------------------------------------------------
 
 
-def test_the_agent_gets_four_tools_and_not_decide_refund():
+def test_the_agent_gets_five_tools_and_not_decide_refund():
     names = [schema["function"]["name"] for schema in tool_schemas()]
-    assert names == ["lookup_order", "issue_refund", "create_ticket", "escalate"]
+    assert names == [
+        "search_knowledge",
+        "lookup_order",
+        "issue_refund",
+        "create_ticket",
+        "escalate",
+    ]
 
 
 def test_no_tool_accepts_a_customer_or_an_amount():
@@ -35,7 +41,7 @@ def test_no_tool_accepts_a_customer_or_an_amount():
 
 
 def test_issue_refund_schema_lists_the_reason_codes_and_requires_every_argument():
-    parameters = tool_schemas()[1]["function"]["parameters"]
+    parameters = tool_schemas()[2]["function"]["parameters"]
     assert parameters["required"] == ["order_item_id", "quantity", "reason_code"]
     assert parameters["properties"]["reason_code"]["enum"] == list(ReasonCode.__args__)
     assert parameters["properties"]["quantity"]["minimum"] == 1
@@ -161,4 +167,10 @@ async def test_create_ticket_through_dispatch_is_saved_for_the_session_customer(
 
 
 def test_every_tool_in_the_registry_has_a_handler_that_takes_a_context():
-    assert set(TOOLS) == {"lookup_order", "issue_refund", "create_ticket", "escalate"}
+    assert set(TOOLS) == {
+        "search_knowledge",
+        "lookup_order",
+        "issue_refund",
+        "create_ticket",
+        "escalate",
+    }

@@ -1,6 +1,6 @@
 # Phase 4: Agent loop and API
 
-**Status:** in progress (step 2 of 6 done)
+**Status:** in progress (step 3 of 6 done)
 **Gate:** trap and tool evals run
 
 ## Goal
@@ -15,9 +15,9 @@ This is the first phase that needs an `OPENAI_API_KEY` to run the agent. Everyth
 
 - [x] **Agent eval cases**: `evals/datasets/agent.dev.jsonl` (37 rows) and `agent.test.jsonl` (19 rows), with the schema and loader in `evals/agent_cases.py`. Scenarios built from `traps.yaml` and from the tool behaviors: the customer, what they say, the tools that must (or must not) be called with which arguments, the refunds the run must add, and what the answer must (or must not) contain
 - [x] **Login and tokens**: `backend/app/auth.py`. Password hashing, `POST /auth/login`, a signed token, and the `current_customer` and `require_approver` dependencies. The seed gets a real demo password
-- [ ] **Model interface**: `backend/app/agent/llm.py`. A thin `LLMClient` protocol, the OpenAI implementation, and a scripted fake for tests
-- [ ] **Knowledge tool**: `search_knowledge` added to the tool registry, returning passages with their status, date, heading path and a low-confidence flag
-- [ ] **Prompt**: `backend/app/agent/prompt.py`. The system prompt, built per turn with the customer's name and membership from the database
+- [x] **Model interface**: `backend/app/agent/llm.py`. A thin `LLMClient` protocol, the OpenAI implementation, and a scripted fake for tests
+- [x] **Knowledge tool**: `search_knowledge` added to the tool registry, returning passages with their status, date, heading path and a low-confidence flag
+- [x] **Prompt**: `backend/app/agent/prompt.py`. The system prompt, built per turn with the customer's name and membership from the database
 - [ ] **Agent loop**: `backend/app/agent/loop.py`. One user message in, a stream of events out; calls the model, dispatches tool calls, stores every message, stops at a step limit
 - [ ] **API**: `backend/app/api/`. Chat sessions, the streaming message endpoint, and the approver endpoints
 - [ ] **Agent eval runner**: `evals/agent_eval.py` (`make eval-agent`). Runs each case against a freshly seeded test database and reports pass rates
@@ -68,7 +68,7 @@ class LLMClient(Protocol):
 
 ## Knowledge, citations and escalation
 
-`search_knowledge(query)` is a tool in the registry, so it goes through the same `dispatch`, argument validation and error handling as the action tools. It returns the top five passages, each with `document_id`, `title`, `status`, `updated_at`, `heading_path`, `content` and its scores. For this to work the `ToolContext` gains an `embedder`.
+`search_knowledge(query)` is a tool in the registry, so it goes through the same `dispatch`, argument validation and error handling as the action tools. It returns the top five passages, each with `document_id`, `title`, `status`, `updated_at`, `heading_path` and `content`, plus the `low_confidence` flag. Scores are not shown to the model: the flag carries what it needs, and a raw RRF score means nothing to it. The search runs inside the tool's transaction, so one read-only connection is held for the duration of the embedding call. For this to work the `ToolContext` gains an `embedder`.
 
 The prompt tells the model to:
 
@@ -166,7 +166,7 @@ None needs an API key or the network. The database tests use the same throwaway 
 
 - [x] 1. Write the agent eval cases (dev and test) and review them.
 - [x] 2. Login, tokens, the two dependencies and the seed password.
-- [ ] 3. The model interface, the fake, `search_knowledge` and the prompt.
+- [x] 3. The model interface, the fake, `search_knowledge` and the prompt.
 - [ ] 4. The agent loop and its tests.
 - [ ] 5. The API and its tests.
 - [ ] 6. The eval runner; run dev, tune the prompt on dev only, run the test split once and record the baseline.
