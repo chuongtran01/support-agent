@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import CurrentCustomer, authenticate, create_token, current_customer
+from app.api.deps import current_customer
+from app.auth import CurrentCustomer, authenticate, create_token
 from app.db import get_session
 
 router = APIRouter()

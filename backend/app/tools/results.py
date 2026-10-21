@@ -98,14 +98,6 @@ class TicketResult(Result):
         return None
 
 
-class DecisionResult(Result):
-    status: Literal[
-        "approved", "rejected", "not_authorized", "not_found", "own_refund", "not_pending"
-    ]
-    message: str | None = None
-    refund_id: int | None = None
-
-
 class PassageView(View):
     document_id: str
     title: str

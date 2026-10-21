@@ -8,7 +8,12 @@ risky refunds, and an eval harness that measures all of it.
 
 | Path | Purpose |
 |---|---|
-| `backend/` | FastAPI app, agent loop, retrieval, tools, policy engine |
+| `backend/app/api/` | The HTTP layer: routes, dependencies (login, database, model), server-sent events. The only code that imports FastAPI |
+| `backend/app/agent/` | The agent loop, model client, prompt, chat storage, citation checks and the turn runner |
+| `backend/app/tools/` | The tools the model can call, their argument models and results |
+| `backend/app/policy/` | The refund policy engine: one pure function |
+| `backend/app/retrieval/` | Chunking, ingestion and hybrid search |
+| `backend/app/approvals.py` | The approver's side of refunds: the pending list and deciding (not a tool) |
 | `frontend/` | Next.js chat UI and approval queue |
 | `backend/migrations/` | Alembic migrations for the Postgres schema (pgvector + full-text) |
 | `data/` | Knowledge-base documents and `traps.yaml` ground truth |

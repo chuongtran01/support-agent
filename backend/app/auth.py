@@ -1,4 +1,4 @@
-"""Who is calling: password hashing, signed tokens and the dependencies that check them.
+"""Who is calling: password hashing, signed tokens and logging in.
 
 A token holds only the customer id and an expiry. The customer's role and membership are
 read from the database on every request, so demoting an approver takes effect at once.
@@ -7,25 +7,20 @@ read from the database on every request, so demoting an approver takes effect at
 import asyncio
 from datetime import UTC, datetime, timedelta
 from functools import cache
-from typing import Annotated
 
 import jwt
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
 from app.config import settings
-from app.db import get_session
 
 ALGORITHM = "HS256"
 
 _hasher = PasswordHasher()
-_bearer = HTTPBearer(auto_error=False)
 
 
 class CurrentCustomer(BaseModel):
@@ -77,7 +72,7 @@ def read_token(token: str) -> int | None:
         return None
 
 
-def _to_current(row: models.Customer) -> CurrentCustomer:
+def to_current(row: models.Customer) -> CurrentCustomer:
     return CurrentCustomer(
         id=row.id, email=row.email, name=row.name, role=row.role, membership=row.membership
     )
@@ -95,40 +90,4 @@ async def authenticate(session: AsyncSession, email: str, password: str) -> Curr
     matches = await asyncio.to_thread(verify_password, password, password_hash)
     if row is None or not matches:
         return None
-    return _to_current(row)
-
-
-def _unauthorized() -> HTTPException:
-    return HTTPException(
-        status.HTTP_401_UNAUTHORIZED,
-        "Not authenticated",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-
-
-async def current_customer(
-    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
-    session: Annotated[AsyncSession, Depends(get_session)],
-) -> CurrentCustomer:
-    """The customer a request is for, from its bearer token. Any problem is the same 401."""
-    if credentials is None:
-        raise _unauthorized()
-    customer_id = read_token(credentials.credentials)
-    if customer_id is None:
-        raise _unauthorized()
-    row = await session.get(models.Customer, customer_id)
-    if row is None:
-        raise _unauthorized()
-    customer = _to_current(row)
-    # End the read transaction now: the tools open their own, and a session that is already
-    # in one cannot start another
-    await session.rollback()
-    return customer
-
-
-async def require_approver(
-    customer: Annotated[CurrentCustomer, Depends(current_customer)],
-) -> CurrentCustomer:
-    if customer.role != "approver":
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Approver access required")
-    return customer
+    return to_current(row)

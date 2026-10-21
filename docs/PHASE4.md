@@ -14,7 +14,7 @@ This is the first phase that needs an `OPENAI_API_KEY` to run the agent. Everyth
 ## Deliverables
 
 - [x] **Agent eval cases**: `evals/datasets/agent.dev.jsonl` (37 rows) and `agent.test.jsonl` (19 rows), with the schema and loader in `evals/agent_cases.py`. Scenarios built from `traps.yaml` and from the tool behaviors: the customer, what they say, the tools that must (or must not) be called with which arguments, the refunds the run must add, and what the answer must (or must not) contain
-- [x] **Login and tokens**: `backend/app/auth.py`. Password hashing, `POST /auth/login`, a signed token, and the `current_customer` and `require_approver` dependencies. The seed gets a real demo password
+- [x] **Login and tokens**: `backend/app/auth.py` (password hashing, signed tokens, logging in) and `POST /auth/login`, with the `current_customer` and `require_approver` dependencies in `api/deps.py`. The seed gets a real demo password
 - [x] **Model interface**: `backend/app/agent/llm.py`. A thin `LLMClient` protocol, the OpenAI implementation, and a scripted fake for tests
 - [x] **Knowledge tool**: `search_knowledge` added to the tool registry, returning passages with their status, date, heading path and a low-confidence flag
 - [x] **Prompt**: `backend/app/agent/prompt.py`. The system prompt, built per turn with the customer's name and membership from the database
@@ -33,7 +33,7 @@ POST /sessions/{id}/messages
              every message saved as it is produced
 ```
 
-Each piece does one thing: `auth` decides who is calling, `llm` talks to the provider, `loop` decides what happens next, the registry runs tools, and the API turns events into HTTP. The loop imports no FastAPI and the API imports no OpenAI, so the loop is tested without either.
+Each piece does one thing: `auth` decides who is calling, `llm` talks to the provider, `loop` decides what happens next, the registry runs tools, and the API turns events into HTTP. The loop imports no FastAPI and the API imports no OpenAI, so the loop is tested without either. The same rule holds across the backend: only `api/` and `main.py` import FastAPI. `agent/runner.py` runs a turn as a background task, `api/sse.py` writes events as server-sent events, and `approvals.py` holds the approver's side (`list_pending`, `decide_refund`), which is why it is not in `tools/`.
 
 ## Agent loop
 

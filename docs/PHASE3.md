@@ -15,7 +15,7 @@ The evals are the spec: the policy cases are written before the engine they meas
 - [x] **Schema changes**: Alembic migration `0002`. `order_items.category`, `refunds.order_item_id`, `refunds.quantity` and `tickets.kind`
 - [x] **Seed data**: `backend/app/seed.py` (`make seed`). 6 customers (including an approver), 25 orders and 8 refunds that exercise the window, frequency and approval rules; dates are relative to now so the boundaries stay in place
 - [x] **Policy engine**: `backend/app/policy/engine.py`. A pure function that takes a refund request and the facts about it and returns a verdict; no database and no model. All 46 policy cases pass
-- [x] **Tools**: `backend/app/tools/`. The four tools, each scoped to the session's customer, plus `decide_refund` for approvers (in `refunds.py`, not callable by the agent)
+- [x] **Tools**: `backend/app/tools/`. The four tools, each scoped to the session's customer, plus `decide_refund` for approvers (not callable by the agent; it started in `tools/refunds.py` and now lives in `app/approvals.py`)
 - [x] **Tool registry**: `backend/app/tools/registry.py`. Name, argument model and handler for each tool, with JSON schemas ready for OpenAI function calling and a `dispatch` function that validates arguments and runs each call in its own transaction
 - [x] **Tests**: `backend/tests/`. Policy cases, rule boundaries, customer scoping, the approval flow and the refund-limit race
 

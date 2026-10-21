@@ -18,8 +18,9 @@ from app.agent.messages import (
     ToolContent,
     UserContent,
 )
+from app.agent.runner import TURN_FAILED_MESSAGE, TurnInProgress
 from app.api.chat import MAX_MESSAGE_CHARACTERS, MAX_SESSION_MESSAGES
-from app.api.streaming import TURN_FAILED_MESSAGE, TurnInProgress, sse_frame
+from app.api.sse import sse_frame
 from app.auth import CurrentCustomer
 from app.main import app
 from app.retrieval.search import SearchResult

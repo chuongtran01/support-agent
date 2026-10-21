@@ -1,54 +1,16 @@
 import asyncio
-from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app import models
-from app.seed import seed
+from app.approvals import decide_refund
 from app.tools.context import ToolContext
 from app.tools.orders import lookup_order
-from app.tools.refunds import decide_refund, issue_refund
+from app.tools.refunds import issue_refund
 from app.tools.tickets import create_ticket, escalate
-
-NOW = datetime(2026, 6, 15, 12, 0, tzinfo=UTC)
-
-
-class World:
-    def __init__(self, session, data):
-        self.session = session
-        self.data = data
-
-    def ctx(self, customer: str) -> ToolContext:
-        return ToolContext(self.session, self.data.customers[customer].id, clock=lambda: NOW)
-
-    def item(self, sku: str) -> int:
-        return self.data.items[sku].id
-
-    def order(self, key: str) -> int:
-        return self.data.orders[key].id
-
-    async def run(self, call):
-        """Run one tool call in its own transaction, as the dispatcher will."""
-        if self.session.in_transaction():  # a read in the test started one; end it first
-            await self.session.commit()
-        async with self.session.begin():
-            return await call
-
-    async def count(self, model, **where) -> int:
-        statement = select(func.count()).select_from(model)
-        for column, value in where.items():
-            statement = statement.where(getattr(model, column) == value)
-        return await self.session.scalar(statement)
-
-
-@pytest.fixture
-async def world(session):
-    async with session.begin():
-        data = await seed(session, NOW)
-    return World(session, data)
-
+from tests.tool_world import NOW
 
 # lookup_order ----------------------------------------------------------
 
@@ -234,92 +196,6 @@ async def test_empty_or_oversized_ticket_text_is_rejected(world):
     blank_reason = await world.run(escalate(world.ctx("sam"), ""))
     assert blank_subject.status == long_body.status == blank_reason.status == "invalid_request"
     assert await world.count(models.Ticket) == 0
-
-
-# decide_refund ---------------------------------------------------------
-
-
-async def pending_refund_id(world) -> int:
-    return (
-        (
-            await world.session.scalars(
-                select(models.Refund).where(models.Refund.status == "pending")
-            )
-        )
-        .one()
-        .id
-    )
-
-
-@pytest.mark.parametrize(("decision", "status"), [("approve", "approved"), ("reject", "rejected")])
-async def test_approver_decides_a_pending_refund(world, decision, status):
-    approver = world.data.customers["approver"].id
-    refund_id = await pending_refund_id(world)
-    result = await world.run(decide_refund(world.session, approver, refund_id, decision, NOW))
-    assert (result.status, result.refund_id) == (status, refund_id)
-    refund = await world.session.get(models.Refund, refund_id)
-    assert (refund.status, refund.decided_by, refund.decided_at) == (status, approver, NOW)
-
-
-async def test_a_customer_cannot_decide_a_refund(world):
-    refund_id = await pending_refund_id(world)
-    result = await world.run(
-        decide_refund(world.session, world.data.customers["alex"].id, refund_id, "approve", NOW)
-    )
-    assert result.status == "not_authorized"
-    assert (await world.session.get(models.Refund, refund_id)).status == "pending"
-
-
-async def test_a_refund_can_only_be_decided_once(world):
-    approver = world.data.customers["approver"].id
-    refund_id = await pending_refund_id(world)
-    await world.run(decide_refund(world.session, approver, refund_id, "approve", NOW))
-    again = await world.run(decide_refund(world.session, approver, refund_id, "reject", NOW))
-    assert again.status == "not_pending"
-    assert (await world.session.get(models.Refund, refund_id)).status == "approved"
-
-
-async def test_completed_refunds_cannot_be_decided(world):
-    refund = (
-        await world.session.scalars(
-            select(models.Refund).where(models.Refund.status == "completed")
-        )
-    ).first()
-    result = await world.run(
-        decide_refund(world.session, world.data.customers["approver"].id, refund.id, "approve", NOW)
-    )
-    assert result.status == "not_pending"
-
-
-async def test_unknown_refund_is_not_found(world):
-    result = await world.run(
-        decide_refund(world.session, world.data.customers["approver"].id, 99999, "approve", NOW)
-    )
-    assert result.status == "not_found"
-
-
-async def test_an_approver_cannot_decide_their_own_refund(world):
-    async with world.session.begin():
-        order = models.Order(
-            customer_id=world.data.customers["approver"].id,
-            status="delivered",
-            placed_at=NOW,
-            delivered_at=NOW,
-            total_cents=30000,
-        )
-        world.session.add(order)
-        await world.session.flush()
-        item = models.OrderItem(order_id=order.id, sku="ANY", name="Any", price_cents=30000)
-        world.session.add(item)
-    result = await world.run(issue_refund(world.ctx("approver"), item.id, 1, "changed_mind"))
-    assert result.status == "needs_approval"
-    decided = await world.run(
-        decide_refund(
-            world.session, world.data.customers["approver"].id, result.refund_id, "approve", NOW
-        )
-    )
-    assert decided.status == "own_refund"
-    assert (await world.session.get(models.Refund, result.refund_id)).status == "pending"
 
 
 # concurrency -----------------------------------------------------------

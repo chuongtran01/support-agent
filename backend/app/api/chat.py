@@ -10,9 +10,10 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.agent import store
 from app.agent.llm import LLMClient
 from app.agent.loop import AgentDeps
-from app.api.deps import get_embedder, get_llm, get_sessionmaker, get_turns
-from app.api.streaming import TurnInProgress, TurnRunner, frames
-from app.auth import CurrentCustomer, current_customer
+from app.agent.runner import TurnInProgress, TurnRunner
+from app.api.deps import current_customer, get_embedder, get_llm, get_sessionmaker, get_turns
+from app.api.sse import frames
+from app.auth import CurrentCustomer
 from app.retrieval.embeddings import Embedder
 
 MAX_MESSAGE_CHARACTERS = 2000

@@ -1,17 +1,15 @@
-"""Run a turn apart from the HTTP request and turn its events into server-sent events.
+"""Run a turn apart from whoever started it, one at a time per session.
 
-The turn is a task that writes events to a queue; the response reads the queue. If the browser
+The turn is a task that writes its events to a queue; the caller reads the queue. If the caller
 goes away, the task still finishes and saves its messages, so a refund that was made is never
 missing from the conversation.
 """
 
 import asyncio
-import json
 import logging
 import uuid
-from collections.abc import AsyncIterator
 
-from app.agent.events import DoneEvent, ErrorEvent, TextEvent, ToolEvent, TurnEvent
+from app.agent.events import ErrorEvent, TurnEvent
 from app.agent.loop import AgentDeps, run_turn
 from app.auth import CurrentCustomer
 
@@ -22,34 +20,6 @@ TURN_FAILED_MESSAGE = "Something went wrong on our side. Please try again."
 
 class TurnInProgress(Exception):
     """A turn is already running in this session."""
-
-
-def sse_frame(event: TurnEvent) -> str:
-    """One server-sent event. The JSON has no raw newlines, so a frame is always three lines."""
-    match event:
-        case TextEvent(text):
-            name, data = "text", {"text": text}
-        case ToolEvent(tool, phase, status):
-            name, data = "tool", {"name": tool, "phase": phase, "status": status}
-        case DoneEvent():
-            name = "done"
-            data = {
-                "message_id": event.message_id,
-                "citations": [
-                    {"document_id": c.document_id, "title": c.title, "heading_path": c.heading_path}
-                    for c in event.citations
-                ],
-                "dropped_citations": event.dropped_citations,
-            }
-        case ErrorEvent(message):
-            name, data = "error", {"message": message}
-    return f"event: {name}\ndata: {json.dumps(data)}\n\n"
-
-
-async def frames(queue: asyncio.Queue[TurnEvent | None]) -> AsyncIterator[str]:
-    """The frames of a turn, until it ends."""
-    while (event := await queue.get()) is not None:
-        yield sse_frame(event)
 
 
 class TurnRunner:

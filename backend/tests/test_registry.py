@@ -19,7 +19,6 @@ from app.tools.results import (
     SearchKnowledgeResult,
     TicketResult,
 )
-from tests.test_tools import world  # noqa: F401  (fixture)
 
 
 def no_database() -> ToolContext:
@@ -109,14 +108,14 @@ async def test_an_empty_argument_string_counts_as_no_arguments():
 # Running tools -----------------------------------------------------------
 
 
-async def test_lookup_order_returns_json_without_empty_fields(world):  # noqa: F811
+async def test_lookup_order_returns_json_without_empty_fields(world):
     result = await call(world.ctx("alex"), "lookup_order", order_id=world.order("alex-socks"))
     assert result["status"] == "ok"
     assert "message" not in result
     assert result["order"]["items"][0]["order_item_id"] == world.item("SOCK-TR")
 
 
-async def test_a_foreign_customer_id_argument_changes_nothing(world):  # noqa: F811
+async def test_a_foreign_customer_id_argument_changes_nothing(world):
     priya = world.data.customers["priya"].id
     ctx, item = world.ctx("alex"), world.item("SOCK-TR")
     result = await call(
@@ -131,7 +130,7 @@ async def test_a_foreign_customer_id_argument_changes_nothing(world):  # noqa: F
     assert await world.count(models.Refund) == 8  # the seeded refunds, nothing new
 
 
-async def test_issue_refund_through_dispatch_commits_the_refund(world):  # noqa: F811
+async def test_issue_refund_through_dispatch_commits_the_refund(world):
     ctx, item = world.ctx("alex"), world.item("BOOT-TR")
     result = await call(
         ctx, "issue_refund", order_item_id=item, quantity=1, reason_code="changed_mind"
@@ -143,7 +142,7 @@ async def test_issue_refund_through_dispatch_commits_the_refund(world):  # noqa:
     assert refund.status == "completed"
 
 
-async def test_another_customers_item_is_not_found_through_dispatch(world):  # noqa: F811
+async def test_another_customers_item_is_not_found_through_dispatch(world):
     ctx, item = world.ctx("sam"), world.item("SOCK-TR")  # Alex's socks, asked for by Sam
     result = await call(
         ctx, "issue_refund", order_item_id=item, quantity=1, reason_code="changed_mind"
@@ -152,7 +151,7 @@ async def test_another_customers_item_is_not_found_through_dispatch(world):  # n
     assert await world.count(models.Refund) == 8
 
 
-async def test_a_tool_that_raises_leaves_nothing_behind(world):  # noqa: F811
+async def test_a_tool_that_raises_leaves_nothing_behind(world):
     async def writes_then_fails(ctx, subject, body) -> TicketResult:
         ctx.session.add(
             models.Ticket(customer_id=ctx.customer_id, kind="support", subject=subject, body=body)
@@ -170,7 +169,7 @@ async def test_a_tool_that_raises_leaves_nothing_behind(world):  # noqa: F811
     assert await world.count(models.Ticket) == 0
 
 
-async def test_create_ticket_through_dispatch_is_saved_for_the_session_customer(world):  # noqa: F811
+async def test_create_ticket_through_dispatch_is_saved_for_the_session_customer(world):
     sam = world.data.customers["sam"].id
     result = await call(world.ctx("sam"), "create_ticket", subject="Zipper", body="It broke.")
     assert result["status"] == "ok"
@@ -191,7 +190,7 @@ def test_every_tool_in_the_registry_has_a_handler_that_takes_a_context():
 # Receipts ----------------------------------------------------------------
 
 
-async def test_run_tool_gives_the_status_and_a_receipt_for_a_change(world):  # noqa: F811
+async def test_run_tool_gives_the_status_and_a_receipt_for_a_change(world):
     ctx, item = world.ctx("alex"), world.item("BOOT-TR")
     arguments = json.dumps({"order_item_id": item, "quantity": 1, "reason_code": "changed_mind"})
     output = await run_tool(ctx, "issue_refund", arguments)
@@ -199,13 +198,13 @@ async def test_run_tool_gives_the_status_and_a_receipt_for_a_change(world):  # n
     assert json.loads(output.text)["status"] == "allowed"
 
 
-async def test_run_tool_has_no_receipt_when_nothing_changed(world):  # noqa: F811
+async def test_run_tool_has_no_receipt_when_nothing_changed(world):
     ctx = world.ctx("alex")
     output = await run_tool(ctx, "lookup_order", json.dumps({"order_id": world.order("alex-5d")}))
     assert (output.status, output.receipt) == ("ok", None)
 
 
-async def test_a_refund_that_was_denied_has_no_receipt(world):  # noqa: F811
+async def test_a_refund_that_was_denied_has_no_receipt(world):
     ctx, item = world.ctx("alex"), world.item("SHL-RN")  # bought as final sale
     arguments = json.dumps({"order_item_id": item, "quantity": 1, "reason_code": "changed_mind"})
     output = await run_tool(ctx, "issue_refund", arguments)
@@ -221,7 +220,7 @@ async def test_a_bad_call_has_the_invalid_status_and_no_receipt(name, raw):
     assert (output.status, output.receipt) == ("invalid_request", None)
 
 
-async def test_dispatch_is_run_tool_without_the_extras(world):  # noqa: F811
+async def test_dispatch_is_run_tool_without_the_extras(world):
     ctx = world.ctx("alex")
     raw = json.dumps({"order_id": world.order("alex-5d")})
     assert (

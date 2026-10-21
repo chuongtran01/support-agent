@@ -11,14 +11,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app import models
 from app.api.auth import router
+from app.api.deps import current_customer, require_approver
 from app.auth import (
     ALGORITHM,
     CurrentCustomer,
     create_token,
-    current_customer,
     hash_password,
     read_token,
-    require_approver,
     verify_password,
 )
 from app.config import settings

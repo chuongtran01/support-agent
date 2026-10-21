@@ -11,8 +11,8 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.agent.llm import ScriptedLLM
+from app.agent.runner import TurnRunner
 from app.api.deps import get_embedder, get_llm, get_sessionmaker, get_turns
-from app.api.streaming import TurnRunner
 from app.auth import create_token
 from app.db import get_session
 from app.main import app

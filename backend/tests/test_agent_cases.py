@@ -17,7 +17,7 @@ from app import models
 from app.policy.engine import RefundFacts, RefundRequest, evaluate_refund
 from app.tools.orders import COUNTED_STATUSES
 from app.tools.refunds import policy_config
-from tests.test_tools import NOW, world  # noqa: F401  (fixture)
+from tests.tool_world import NOW
 
 
 @pytest.fixture(scope="module")
@@ -111,7 +111,7 @@ def test_placeholders_become_ids_and_a_bare_placeholder_becomes_an_int():
 # Against the seed ---------------------------------------------------------
 
 
-async def test_every_placeholder_names_something_in_the_seed(world, splits):  # noqa: F811
+async def test_every_placeholder_names_something_in_the_seed(world, splits):
     orders = {key: row.id for key, row in world.data.orders.items()}
     items = {sku: row.id for sku, row in world.data.items.items()}
     for case in every_case(splits):
@@ -119,7 +119,7 @@ async def test_every_placeholder_names_something_in_the_seed(world, splits):  # 
             assert key in (orders if kind == "order" else items), f"{case.id}: {kind}:{key}"
 
 
-async def test_expected_refunds_match_what_the_policy_engine_decides(world, splits):  # noqa: F811
+async def test_expected_refunds_match_what_the_policy_engine_decides(world, splits):
     """The numbers in the dataset are written by hand; the engine must agree with them."""
     orders = {key: row.id for key, row in world.data.orders.items()}
     items = {sku: row.id for sku, row in world.data.items.items()}

@@ -3,14 +3,13 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import models
-from app.auth import CurrentCustomer, require_approver
+from app.api.deps import require_approver
+from app.approvals import decide_refund, list_pending
+from app.auth import CurrentCustomer
 from app.db import get_session
 from app.tools.context import utc_now
-from app.tools.refunds import decide_refund
 
 router = APIRouter()
 
@@ -51,26 +50,19 @@ class DecisionOut(BaseModel):
 
 @router.get("/approvals")
 async def list_approvals(approver: Approver, session: Session) -> list[PendingRefund]:
-    rows = await session.execute(
-        select(models.Refund, models.Customer.name, models.OrderItem.name)
-        .join(models.Customer, models.Customer.id == models.Refund.customer_id)
-        .join(models.OrderItem, models.OrderItem.id == models.Refund.order_item_id)
-        .where(models.Refund.status == "pending")
-        .order_by(models.Refund.created_at, models.Refund.id)
-    )
     return [
         PendingRefund(
-            refund_id=refund.id,
-            order_id=refund.order_id,
-            customer_name=customer_name,
-            item_name=item_name,
-            quantity=refund.quantity,
-            amount_cents=refund.amount_cents,
-            reason=refund.reason,
-            created_at=refund.created_at,
-            is_own=refund.customer_id == approver.id,
+            refund_id=p.refund_id,
+            order_id=p.order_id,
+            customer_name=p.customer_name,
+            item_name=p.item_name,
+            quantity=p.quantity,
+            amount_cents=p.amount_cents,
+            reason=p.reason,
+            created_at=p.created_at,
+            is_own=p.customer_id == approver.id,
         )
-        for refund, customer_name, item_name in rows
+        for p in await list_pending(session)
     ]
 
 

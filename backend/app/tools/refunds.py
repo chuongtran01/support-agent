@@ -1,8 +1,6 @@
-from datetime import datetime
-from typing import Literal, get_args
+from typing import get_args
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
 from app.config import settings
@@ -10,7 +8,7 @@ from app.policy.engine import PolicyConfig, ReasonCode, RefundFacts, RefundReque
 from app.tools.checks import check_quantity
 from app.tools.context import ToolContext
 from app.tools.orders import COUNTED_STATUSES
-from app.tools.results import DecisionResult, IssueRefundResult
+from app.tools.results import IssueRefundResult
 from app.tools.tickets import open_ticket
 
 
@@ -107,40 +105,3 @@ async def issue_refund(
         refund_id=refund_id,
         ticket_id=ticket_id,
     )
-
-
-async def decide_refund(
-    session: AsyncSession,
-    approver_id: int,
-    refund_id: int,
-    decision: Literal["approve", "reject"],
-    now: datetime,
-) -> DecisionResult:
-    """Approve or reject a pending refund. This is not a tool: the agent cannot call it.
-
-    The approver's role is read from the database, an approver cannot decide their own
-    refund, and a refund can be decided once.
-    """
-    approver = await session.get(models.Customer, approver_id)
-    if approver is None or approver.role != "approver":
-        return DecisionResult(
-            status="not_authorized", message="Only an approver can decide refunds."
-        )
-    refund = await session.scalar(
-        select(models.Refund).where(models.Refund.id == refund_id).with_for_update()
-    )
-    if refund is None:
-        return DecisionResult(status="not_found", message="No matching refund was found.")
-    if refund.customer_id == approver_id:
-        return DecisionResult(
-            status="own_refund", message="An approver cannot decide their own refund."
-        )
-    if refund.status != "pending":
-        return DecisionResult(
-            status="not_pending", message=f"This refund is already {refund.status}."
-        )
-    refund.status = "approved" if decision == "approve" else "rejected"
-    refund.decided_by = approver_id
-    refund.decided_at = now
-    await session.flush()
-    return DecisionResult(status=refund.status, refund_id=refund.id)
