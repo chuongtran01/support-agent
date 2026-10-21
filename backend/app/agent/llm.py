@@ -9,7 +9,7 @@ from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, OpenAIError
 
 from app.config import settings
 
@@ -42,6 +42,11 @@ class Done:
 
 
 LLMEvent = TextDelta | ToolCall | Done
+
+
+class LLMError(Exception):
+    """The model could not be reached or refused the request. The only error the loop
+    expects from a client; anything else is a bug and is allowed to surface."""
 
 
 class LLMClient(Protocol):
@@ -97,15 +102,18 @@ class OpenAIClient:
         self._model = model or settings.agent_model
 
     async def stream(self, messages: list[dict], tools: list[dict]) -> AsyncIterator[LLMEvent]:
-        chunks = await self._client.chat.completions.create(
-            model=self._model,
-            messages=messages,
-            tools=tools,
-            stream=True,
-            stream_options={"include_usage": True},
-        )
-        async for event in events_from_chunks(chunks):
-            yield event
+        try:
+            chunks = await self._client.chat.completions.create(
+                model=self._model,
+                messages=messages,
+                tools=tools,
+                stream=True,
+                stream_options={"include_usage": True},
+            )
+            async for event in events_from_chunks(chunks):
+                yield event
+        except OpenAIError as error:
+            raise LLMError(str(error)) from error
 
 
 class ScriptedLLM:

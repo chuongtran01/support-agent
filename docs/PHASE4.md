@@ -1,6 +1,6 @@
 # Phase 4: Agent loop and API
 
-**Status:** in progress (step 3 of 6 done)
+**Status:** in progress (step 4 of 6 done)
 **Gate:** trap and tool evals run
 
 ## Goal
@@ -18,7 +18,7 @@ This is the first phase that needs an `OPENAI_API_KEY` to run the agent. Everyth
 - [x] **Model interface**: `backend/app/agent/llm.py`. A thin `LLMClient` protocol, the OpenAI implementation, and a scripted fake for tests
 - [x] **Knowledge tool**: `search_knowledge` added to the tool registry, returning passages with their status, date, heading path and a low-confidence flag
 - [x] **Prompt**: `backend/app/agent/prompt.py`. The system prompt, built per turn with the customer's name and membership from the database
-- [ ] **Agent loop**: `backend/app/agent/loop.py`. One user message in, a stream of events out; calls the model, dispatches tool calls, stores every message, stops at a step limit
+- [x] **Agent loop**: `backend/app/agent/loop.py`. One user message in, a stream of events out; calls the model, dispatches tool calls, stores every message, stops at a step limit
 - [ ] **API**: `backend/app/api/`. Chat sessions, the streaming message endpoint, and the approver endpoints
 - [ ] **Agent eval runner**: `evals/agent_eval.py` (`make eval-agent`). Runs each case against a freshly seeded test database and reports pass rates
 - [ ] **Tests**: `backend/tests/`. Login, scoping of every endpoint, the loop with a fake model, streaming, and approver rules; none needs an API key
@@ -55,7 +55,7 @@ Rules the loop keeps:
 
 ### Messages
 
-`chat_messages.role` holds `user`, `assistant` or `tool`, and `content` holds the rest of the OpenAI message as JSON: the text, the `tool_calls` of an assistant message, or the `tool_call_id` and result of a tool message. The system prompt is not stored; it is added on every call, so a change to the prompt applies to old sessions too. The messages endpoint returns a display form (user and assistant text, with tool messages left out).
+`chat_messages.role` holds `user`, `assistant` or `tool`, and `content` holds the rest of the OpenAI message as JSON: the text, the `tool_calls` of an assistant message, or the `tool_call_id` and result of a tool message. Each shape is a frozen model in `agent/messages.py` (`UserContent`, `AssistantContent`, `ToolContent`) that rejects unknown fields, so a stored row that does not fit its role fails when it is loaded, not halfway through a model call. The system prompt is not stored; it is added on every call, so a change to the prompt applies to old sessions too. The messages endpoint returns a display form (user and assistant text, with tool messages left out).
 
 ### The model interface
 
@@ -64,7 +64,7 @@ class LLMClient(Protocol):
     def stream(self, messages: list[dict], tools: list[dict]) -> AsyncIterator[LLMEvent]: ...
 ```
 
-`LLMEvent` is a text delta, a finished tool call, or the end of the reply with its token usage. The OpenAI implementation uses the Chat Completions API with `tools`; the fake returns a scripted list of events, which is how the loop's tests run. The loop is split into small functions (call the model, run one tool, save a message) so phase 6 can wrap each in a trace span without restructuring it.
+A client signals a provider failure by raising `LLMError`, the only error the loop catches: it ends the turn with an `error` event and keeps the saved question, while any other exception is a bug and surfaces. `LLMEvent` is a text delta, a finished tool call, or the end of the reply with its token usage. The OpenAI implementation uses the Chat Completions API with `tools`; the fake returns a scripted list of events, which is how the loop's tests run. The loop is split into small functions (call the model, run one tool, save a message) so phase 6 can wrap each in a trace span without restructuring it.
 
 ## Knowledge, citations and escalation
 
@@ -167,7 +167,7 @@ None needs an API key or the network. The database tests use the same throwaway 
 - [x] 1. Write the agent eval cases (dev and test) and review them.
 - [x] 2. Login, tokens, the two dependencies and the seed password.
 - [x] 3. The model interface, the fake, `search_knowledge` and the prompt.
-- [ ] 4. The agent loop and its tests.
+- [x] 4. The agent loop and its tests.
 - [ ] 5. The API and its tests.
 - [ ] 6. The eval runner; run dev, tune the prompt on dev only, run the test split once and record the baseline.
 
