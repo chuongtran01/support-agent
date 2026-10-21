@@ -31,11 +31,19 @@ class SessionOut(BaseModel):
     preview: str | None = None
 
 
+class CitationOut(BaseModel):
+    document_id: str
+    title: str
+    heading_path: str
+
+
 class MessageOut(BaseModel):
     id: int
     role: Literal["user", "assistant"]
     text: str
     created_at: datetime
+    citations: list[CitationOut] = []
+    dropped_citations: int = 0
 
 
 class SendMessage(BaseModel):
@@ -84,7 +92,17 @@ async def list_messages(
         shown = await store.load_display(sessions, session_id, customer.id)
     except store.SessionNotFound:
         raise _not_found() from None
-    return [MessageOut(**vars(m)) for m in shown]
+    return [
+        MessageOut(
+            id=m.id,
+            role=m.role,
+            text=m.text,
+            created_at=m.created_at,
+            citations=[CitationOut(**vars(c)) for c in m.citations],
+            dropped_citations=m.dropped_citations,
+        )
+        for m in shown
+    ]
 
 
 @router.post("/sessions/{session_id}/messages")

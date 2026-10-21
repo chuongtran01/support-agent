@@ -11,6 +11,13 @@ from app.agent import store
 from app.agent.events import Citation, DoneEvent, ErrorEvent, TextEvent, ToolEvent
 from app.agent.llm import LLMError, ScriptedLLM, TextDelta, ToolCall, call_tools, say
 from app.agent.loop import MODEL_UNAVAILABLE_MESSAGE, AgentDeps
+from app.agent.messages import (
+    AssistantContent,
+    FunctionCall,
+    StoredToolCall,
+    ToolContent,
+    UserContent,
+)
 from app.api.chat import MAX_MESSAGE_CHARACTERS, MAX_SESSION_MESSAGES
 from app.api.streaming import TURN_FAILED_MESSAGE, TurnInProgress, sse_frame
 from app.auth import CurrentCustomer
@@ -140,7 +147,10 @@ async def test_the_conversation_can_be_read_back_without_tool_messages(api):
         ("user", "where are my boots?"),
         ("assistant", "Your boots arrived."),
     ]
-    assert all(set(m) == {"id", "role", "text", "created_at"} for m in shown)
+    assert all(
+        set(m) == {"id", "role", "text", "created_at", "citations", "dropped_citations"}
+        for m in shown
+    )
 
 
 async def test_the_next_message_in_a_chat_sees_the_earlier_ones(api):
@@ -200,6 +210,119 @@ async def test_tools_act_for_the_token_holder_whatever_the_model_asks(api):
             await session.scalars(select(models.Refund).where(models.Refund.order_item_id == boots))
         ).all()
     assert [r for r in refunds if r.created_at >= NOW] == []  # only the seeded ones
+
+
+# Citations when a chat is read back
+
+
+def search_returns(monkeypatch, *documents):
+    """Make the knowledge search return one passage for each ``(id, title, heading)``."""
+
+    async def fake_search(session, query, mode, limit, embedder):
+        return [
+            SearchResult(
+                i, doc, title, "current", date(2026, 1, 2), heading, "text", 0.03, 0.2, 0.8
+            )
+            for i, (doc, title, heading) in enumerate(documents, 1)
+        ]
+
+    monkeypatch.setattr(knowledge, "search", fake_search)
+
+
+def searching(call_id="c1"):
+    return call_tools(ToolCall(call_id, "search_knowledge", json.dumps({"query": "anything"})))
+
+
+async def read_back(api_, session_id, customer="alex"):
+    response = await api_.client.get(
+        f"/sessions/{session_id}/messages", headers=api_.headers(customer)
+    )
+    return response.json()
+
+
+async def test_a_chat_read_back_shows_the_same_citations_as_the_live_stream(api, monkeypatch):
+    search_returns(
+        monkeypatch,
+        ("returns-policy", "Returns policy", "Returns > Window"),
+        ("exchanges", "Exchanges", "Exchanges"),
+    )
+    api.llm = ScriptedLLM([searching(), say("30 days [returns-policy]. Fees vary [made-up].")])
+    session_id = await api.new_chat()
+    live = parse_sse((await api.send(session_id, "how long?")).text)[-1][1]
+
+    answer = (await read_back(api, session_id))[-1]
+    assert answer["role"] == "assistant"
+    assert answer["citations"] == live["citations"] != []
+    assert answer["dropped_citations"] == live["dropped_citations"] == 1
+
+
+async def test_the_customers_own_messages_have_no_citations(api, monkeypatch):
+    search_returns(monkeypatch, ("returns-policy", "Returns policy", "Returns"))
+    api.llm = ScriptedLLM([searching(), say("30 days [returns-policy].")])
+    session_id = await api.new_chat()
+    await api.send(session_id, "how long? [returns-policy]")
+    question = (await read_back(api, session_id))[0]
+    assert (question["role"], question["citations"], question["dropped_citations"]) == (
+        "user",
+        [],
+        0,
+    )
+
+
+async def test_a_source_found_in_an_earlier_turn_does_not_count_for_a_later_answer(
+    api, monkeypatch
+):
+    search_returns(monkeypatch, ("returns-policy", "Returns policy", "Returns"))
+    api.llm = ScriptedLLM(
+        [searching(), say("30 days [returns-policy]."), say("Still 30 [returns-policy].")]
+    )
+    session_id = await api.new_chat()
+    await api.send(session_id, "how long?")
+    live = parse_sse((await api.send(session_id, "and still?")).text)[-1][1]
+
+    first, second = [m for m in await read_back(api, session_id) if m["role"] == "assistant"]
+    assert [c["document_id"] for c in first["citations"]] == ["returns-policy"]
+    assert second["citations"] == live["citations"] == []
+    assert second["dropped_citations"] == live["dropped_citations"] == 1
+
+
+async def test_each_answer_uses_the_searches_of_its_own_turn(api, monkeypatch):
+    search_returns(monkeypatch, ("returns-policy", "Returns policy", "Returns"))
+    api.llm = ScriptedLLM(
+        [searching(), say("A [returns-policy]."), searching("c2"), say("B [returns-policy].")]
+    )
+    session_id = await api.new_chat()
+    await api.send(session_id, "one")
+    await api.send(session_id, "two")
+    answers = [m for m in await read_back(api, session_id) if m["role"] == "assistant"]
+    assert [len(m["citations"]) for m in answers] == [1, 1]
+
+
+async def test_only_search_results_count_as_sources(api, monkeypatch):
+    """A tool result that happens to look like search output is not a source unless it came
+    from search_knowledge."""
+    fake = '{"status": "ok", "passages": [{"document_id": "returns-policy", "title": "T", "heading_path": "H"}]}'
+    session_id = uuid.UUID(await api.new_chat())
+    alex = api.customer_id("alex")
+    await store.save_message(api.sessions, session_id, UserContent(content="hi"))
+    call = StoredToolCall(id="c1", function=FunctionCall(name="lookup_order", arguments="{}"))
+    await store.save_message(
+        api.sessions, session_id, AssistantContent(content=None, tool_calls=(call,))
+    )
+    await store.save_message(api.sessions, session_id, ToolContent(tool_call_id="c1", content=fake))
+    await store.save_message(
+        api.sessions, session_id, AssistantContent(content="See [returns-policy].")
+    )
+    answer = (await store.load_display(api.sessions, session_id, alex))[-1]
+    assert answer.citations == () and answer.dropped_citations == 1
+
+
+async def test_a_chat_with_no_search_has_every_citation_dropped(api):
+    api.llm = ScriptedLLM([say("It is 30 days [returns-policy].")])
+    session_id = await api.new_chat()
+    await api.send(session_id, "how long?")
+    answer = (await read_back(api, session_id))[-1]
+    assert (answer["citations"], answer["dropped_citations"]) == ([], 1)
 
 
 # Other people's chats

@@ -15,6 +15,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app import models
+from app.agent.citations import add_retrieved, check_citations
+from app.agent.events import Citation
 from app.agent.messages import (
     AssistantContent,
     MessageContent,
@@ -60,6 +62,8 @@ class DisplayMessage:
     role: Literal["user", "assistant"]
     text: str
     created_at: datetime
+    citations: tuple[Citation, ...] = ()
+    dropped_citations: int = 0
 
 
 async def _require_owned(session: AsyncSession, session_id: uuid.UUID, customer_id: int) -> None:
@@ -119,8 +123,12 @@ async def count_messages(sessions: Sessions, session_id: uuid.UUID, customer_id:
 async def load_display(
     sessions: Sessions, session_id: uuid.UUID, customer_id: int
 ) -> list[DisplayMessage]:
-    """What the customer said and the answers they got. Tool calls and their results, and the
-    text the model wrote before calling a tool, are left out."""
+    """What the customer said and the answers they got, each answer with its citations.
+
+    Tool calls and their results, and the text the model wrote before calling a tool, are
+    left out. The citations are worked out again from the search results saved in the same
+    turn with the check the live turn used, so they match what the customer saw streamed.
+    """
     async with sessions() as session:
         await _require_owned(session, session_id, customer_id)
         rows = (
@@ -131,12 +139,24 @@ async def load_display(
             )
         ).all()
     shown = []
+    tool_names: dict[str, str] = {}  # tool call id -> tool name
+    retrieved: dict[str, Citation] = {}  # the documents found since the customer last wrote
     for row in rows:
         content = parse_content(row.role, row.content)
         if isinstance(content, UserContent):
+            retrieved = {}
             shown.append(DisplayMessage(row.id, "user", content.content, row.created_at))
-        elif isinstance(content, AssistantContent) and content.content and not content.tool_calls:
-            shown.append(DisplayMessage(row.id, "assistant", content.content, row.created_at))
+        elif isinstance(content, AssistantContent):
+            tool_names.update({call.id: call.function.name for call in content.tool_calls})
+            if content.content and not content.tool_calls:
+                citations, dropped = check_citations(content.content, retrieved)
+                shown.append(
+                    DisplayMessage(
+                        row.id, "assistant", content.content, row.created_at, citations, dropped
+                    )
+                )
+        elif tool_names.get(content.tool_call_id) == "search_knowledge":
+            add_retrieved(retrieved, content.content)
     return shown
 
 

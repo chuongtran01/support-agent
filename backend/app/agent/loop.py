@@ -14,7 +14,7 @@ from datetime import datetime
 from typing import Any
 
 from app.agent import store
-from app.agent.citations import check_citations, retrieved_from_result
+from app.agent.citations import add_retrieved, check_citations
 from app.agent.events import Citation, DoneEvent, ErrorEvent, TextEvent, ToolEvent, TurnEvent
 from app.agent.llm import Done, LLMClient, LLMError, TextDelta, ToolCall, Usage
 from app.agent.messages import (
@@ -180,8 +180,7 @@ async def run_turn(
             if output.receipt:
                 receipts.append(output.receipt)
             if call.name == "search_knowledge":
-                for document_id, citation in retrieved_from_result(output.text).items():
-                    retrieved.setdefault(document_id, citation)
+                add_retrieved(retrieved, output.text)
             outcome = ToolContent(tool_call_id=call.id, content=output.text)
             await store.save_message(deps.sessions, session_id, outcome)
             history.append(outcome.as_openai())

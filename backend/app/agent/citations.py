@@ -30,6 +30,13 @@ def retrieved_from_result(raw: str) -> dict[str, Citation]:
         return {}
 
 
+def add_retrieved(retrieved: dict[str, Citation], raw: str) -> None:
+    """Add the documents in a search_knowledge result to a turn's sources. A document keeps the
+    heading of the first passage found, so a later, weaker search does not replace it."""
+    for document_id, citation in retrieved_from_result(raw).items():
+        retrieved.setdefault(document_id, citation)
+
+
 def check_citations(text: str, retrieved: dict[str, Citation]) -> tuple[tuple[Citation, ...], int]:
     """The citations that match a retrieved document, and how many cited ids did not."""
     ids = cited_ids(text)
