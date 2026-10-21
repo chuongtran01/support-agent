@@ -62,7 +62,7 @@ class World:
         )
 
     async def chat(self, customer="alex"):
-        return await store.create_session(self.sessions, self.customers[customer].id)
+        return (await store.create_session(self.sessions, self.customers[customer].id)).id
 
     async def turn(self, llm, text, customer="alex", session_id=None, **overrides):
         """Run one turn and return (session id, events)."""

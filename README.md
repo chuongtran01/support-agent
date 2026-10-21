@@ -31,6 +31,15 @@ make seed    # customers, orders and refunds; safe to re-run, leaves the knowled
 
 Every demo customer logs in with the password in `SEED_PASSWORD` (`demo` by default), for example `alex@example.com` (a customer) or `approver@example.com` (can decide pending refunds).
 
+## Run the API
+
+```sh
+cd backend
+.venv/bin/uvicorn app.main:app --reload    # http://localhost:8000/docs
+```
+
+Log in with `POST /auth/login` (for example `alex@example.com` and the seed password), then send the token as `Authorization: Bearer ...`. A message is `POST /sessions/{id}/messages` and the answer streams back as server-sent events (`curl -N` shows them). The agent needs `OPENAI_API_KEY` and the knowledge base loaded (next section).
+
 ## Load the knowledge base
 
 Set `OPENAI_API_KEY` in `.env` (embeddings use `text-embedding-3-small`), then:

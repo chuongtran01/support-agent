@@ -8,13 +8,20 @@ Every write here is its own short transaction, so nothing is held open across a 
 import json
 import uuid
 from dataclasses import dataclass
-from typing import Any
+from datetime import datetime
+from typing import Any, Literal
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app import models
-from app.agent.messages import AssistantContent, MessageContent, ToolContent, parse_content
+from app.agent.messages import (
+    AssistantContent,
+    MessageContent,
+    ToolContent,
+    UserContent,
+    parse_content,
+)
 
 Sessions = async_sessionmaker
 
@@ -38,12 +45,99 @@ class StoredMessage:
     content: MessageContent
 
 
-async def create_session(sessions: Sessions, customer_id: int) -> uuid.UUID:
+@dataclass(frozen=True)
+class SessionSummary:
+    id: uuid.UUID
+    created_at: datetime
+    preview: str | None = None  # the customer's first message
+
+
+@dataclass(frozen=True)
+class DisplayMessage:
+    """A message as the customer sees it: what they said and the answers they were given."""
+
+    id: int
+    role: Literal["user", "assistant"]
+    text: str
+    created_at: datetime
+
+
+async def _require_owned(session: AsyncSession, session_id: uuid.UUID, customer_id: int) -> None:
+    owned = await session.scalar(
+        select(models.ChatSession.id).where(
+            models.ChatSession.id == session_id, models.ChatSession.customer_id == customer_id
+        )
+    )
+    if owned is None:
+        raise SessionNotFound(str(session_id))
+
+
+async def create_session(sessions: Sessions, customer_id: int) -> SessionSummary:
     async with sessions.begin() as session:
         chat = models.ChatSession(customer_id=customer_id)
         session.add(chat)
         await session.flush()
-        return chat.id
+        await session.refresh(chat)  # the database sets created_at
+        return SessionSummary(chat.id, chat.created_at)
+
+
+async def list_sessions(
+    sessions: Sessions, customer_id: int, limit: int = 50
+) -> list[SessionSummary]:
+    """The customer's chats, newest first."""
+    first_question = (
+        select(models.ChatMessage.content["content"].astext)
+        .where(
+            models.ChatMessage.session_id == models.ChatSession.id,
+            models.ChatMessage.role == "user",
+        )
+        .order_by(models.ChatMessage.id)
+        .limit(1)
+        .scalar_subquery()
+    )
+    async with sessions() as session:
+        rows = await session.execute(
+            select(models.ChatSession.id, models.ChatSession.created_at, first_question)
+            .where(models.ChatSession.customer_id == customer_id)
+            .order_by(models.ChatSession.created_at.desc(), models.ChatSession.id)
+            .limit(limit)
+        )
+        return [SessionSummary(row[0], row[1], row[2]) for row in rows]
+
+
+async def count_messages(sessions: Sessions, session_id: uuid.UUID, customer_id: int) -> int:
+    """How many messages a session holds. Another customer's session is not found."""
+    async with sessions() as session:
+        await _require_owned(session, session_id, customer_id)
+        return await session.scalar(
+            select(func.count())
+            .select_from(models.ChatMessage)
+            .where(models.ChatMessage.session_id == session_id)
+        )
+
+
+async def load_display(
+    sessions: Sessions, session_id: uuid.UUID, customer_id: int
+) -> list[DisplayMessage]:
+    """What the customer said and the answers they got. Tool calls and their results, and the
+    text the model wrote before calling a tool, are left out."""
+    async with sessions() as session:
+        await _require_owned(session, session_id, customer_id)
+        rows = (
+            await session.scalars(
+                select(models.ChatMessage)
+                .where(models.ChatMessage.session_id == session_id)
+                .order_by(models.ChatMessage.id)
+            )
+        ).all()
+    shown = []
+    for row in rows:
+        content = parse_content(row.role, row.content)
+        if isinstance(content, UserContent):
+            shown.append(DisplayMessage(row.id, "user", content.content, row.created_at))
+        elif isinstance(content, AssistantContent) and content.content and not content.tool_calls:
+            shown.append(DisplayMessage(row.id, "assistant", content.content, row.created_at))
+    return shown
 
 
 async def save_message(sessions: Sessions, session_id: uuid.UUID, content: MessageContent) -> int:
@@ -61,13 +155,7 @@ async def load_history(
 ) -> list[StoredMessage]:
     """A session's messages, oldest first. Another customer's session is not found."""
     async with sessions() as session:
-        owned = await session.scalar(
-            select(models.ChatSession.id).where(
-                models.ChatSession.id == session_id, models.ChatSession.customer_id == customer_id
-            )
-        )
-        if owned is None:
-            raise SessionNotFound(str(session_id))
+        await _require_owned(session, session_id, customer_id)
         rows = await session.scalars(
             select(models.ChatMessage)
             .where(models.ChatMessage.session_id == session_id)

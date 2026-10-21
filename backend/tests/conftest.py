@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.config import settings
 from app.seed import BUSINESS_TABLES
+from tests.api_world import api  # noqa: F401  (the API fixture, shared by the API tests)
 
 BACKEND = Path(__file__).resolve().parents[1]
 TEST_DATABASE = "support_test"

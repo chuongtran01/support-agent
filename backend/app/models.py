@@ -151,6 +151,7 @@ class ChatMessage(Base):
     __tablename__ = "chat_messages"
     __table_args__ = (
         CheckConstraint("role IN ('user', 'assistant', 'tool')", name="chat_messages_role_check"),
+        Index("chat_messages_session_id_id_idx", "session_id", "id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
