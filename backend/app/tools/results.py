@@ -4,12 +4,32 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
+from app.policy.engine import dollars
 
-class Result(BaseModel):
+
+class View(BaseModel):
+    """A piece of data inside a result."""
+
     model_config = ConfigDict(frozen=True)
 
 
-class OrderItemView(Result):
+class Result(View):
+    """What a tool hands back.
+
+    ``receipt`` is for the case where the agent runs out of steps right after this tool changed
+    something: the model gets no turn to explain it, so the loop tells the customer with this
+    sentence instead. Return one plain sentence from the result's own fields if the call
+    changed something (a refund made, a ticket opened) and None if it did not. The model never
+    sees it, and it is not used when the model writes the final answer.
+    """
+
+    status: str
+
+    def receipt(self) -> str | None:
+        return None
+
+
+class OrderItemView(View):
     order_item_id: int
     sku: str
     name: str
@@ -20,7 +40,7 @@ class OrderItemView(Result):
     units_refunded: int
 
 
-class RefundView(Result):
+class RefundView(View):
     refund_id: int
     order_item_id: int
     quantity: int
@@ -29,7 +49,7 @@ class RefundView(Result):
     created_at: str
 
 
-class OrderView(Result):
+class OrderView(View):
     id: int
     status: str
     placed_at: str
@@ -55,11 +75,27 @@ class IssueRefundResult(Result):
     refund_id: int | None = None
     ticket_id: int | None = None
 
+    def receipt(self) -> str | None:
+        amount = dollars(self.amount_cents or 0)
+        match self.status:
+            case "allowed":
+                return f"A refund of {amount} has been made."
+            case "needs_approval":
+                return f"A refund of {amount} is waiting for approval."
+            case "manual_review":
+                return "Your refund request has been passed to a person."
+        return None
+
 
 class TicketResult(Result):
     status: Literal["ok", "invalid_request"]
     message: str | None = None
     ticket_id: int | None = None
+
+    def receipt(self) -> str | None:
+        if self.status == "ok":
+            return f"A support ticket (#{self.ticket_id}) has been opened."
+        return None
 
 
 class DecisionResult(Result):
@@ -70,7 +106,7 @@ class DecisionResult(Result):
     refund_id: int | None = None
 
 
-class PassageView(Result):
+class PassageView(View):
     document_id: str
     title: str
     status: str

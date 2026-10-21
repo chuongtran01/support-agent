@@ -6,7 +6,6 @@ No database transaction is open while the model is being called: every message i
 its own short transaction, and ``dispatch`` gives each tool call one more.
 """
 
-import json
 import logging
 import uuid
 from collections.abc import AsyncIterator, Callable
@@ -30,7 +29,7 @@ from app.auth import CurrentCustomer
 from app.config import settings
 from app.retrieval.embeddings import Embedder
 from app.tools.context import ToolContext, utc_now
-from app.tools.registry import dispatch, tool_schemas
+from app.tools.registry import ToolOutput, run_tool, tool_schemas
 from app.tools.tickets import open_ticket
 
 logger = logging.getLogger(__name__)
@@ -83,19 +82,11 @@ async def _model_step(
     yield _Reply("".join(text), calls, usage)
 
 
-async def _run_tool(deps: AgentDeps, customer: CurrentCustomer, call: ToolCall) -> str:
+async def _run_tool(deps: AgentDeps, customer: CurrentCustomer, call: ToolCall) -> ToolOutput:
     """Run one tool call as the logged-in customer. The model never supplies who that is."""
     async with deps.sessions() as session:
         ctx = ToolContext(session, customer.id, deps.clock, deps.embedder)
-        return await dispatch(ctx, call.name, call.arguments)
-
-
-def _result_status(result: str) -> str | None:
-    try:
-        status = json.loads(result).get("status")
-    except (ValueError, AttributeError):
-        return None
-    return status if isinstance(status, str) else None
+        return await run_tool(ctx, call.name, call.arguments)
 
 
 def _assistant_content(reply: _Reply) -> AssistantContent:
@@ -109,9 +100,14 @@ def _assistant_content(reply: _Reply) -> AssistantContent:
 
 
 async def _hand_over(
-    deps: AgentDeps, customer: CurrentCustomer, session_id: uuid.UUID, customer_text: str
+    deps: AgentDeps,
+    customer: CurrentCustomer,
+    session_id: uuid.UUID,
+    customer_text: str,
+    calls: list[str],
 ) -> None:
     """The agent ran out of steps: open an escalation ticket from code, not from the model."""
+    done = "\n".join(f"- {line}" for line in calls) or "- none"
     async with deps.sessions.begin() as session:
         ctx = ToolContext(session, customer.id, deps.clock, deps.embedder)
         await open_ticket(
@@ -119,7 +115,8 @@ async def _hand_over(
             "escalation",
             "The support agent ran out of steps",
             f"The agent made {deps.max_steps} model calls in one turn without answering "
-            f"(chat {session_id}). The customer's message was:\n\n{customer_text}",
+            f"(chat {session_id}). The customer's message was:\n\n{customer_text}\n\n"
+            f"Tool calls made in this turn:\n{done}",
         )
 
 
@@ -138,6 +135,8 @@ async def run_turn(
     history = [*store.to_openai(stored), question.as_openai()]
 
     retrieved: dict[str, Citation] = {}
+    calls_made: list[str] = []  # "name: status", for the ticket if the agent runs out of steps
+    receipts: list[str] = []  # what the tools did, in their own words, for the same case
     model_calls = prompt_tokens = completion_tokens = 0
 
     for _ in range(deps.max_steps):
@@ -176,18 +175,24 @@ async def run_turn(
         history.append(assistant.as_openai())
         for call in reply.tool_calls:
             yield ToolEvent(call.name, "started")
-            result = await _run_tool(deps, customer, call)
+            output = await _run_tool(deps, customer, call)
+            calls_made.append(f"{call.name}: {output.status}")
+            if output.receipt:
+                receipts.append(output.receipt)
             if call.name == "search_knowledge":
-                for document_id, citation in retrieved_from_result(result).items():
+                for document_id, citation in retrieved_from_result(output.text).items():
                     retrieved.setdefault(document_id, citation)
-            outcome = ToolContent(tool_call_id=call.id, content=result)
+            outcome = ToolContent(tool_call_id=call.id, content=output.text)
             await store.save_message(deps.sessions, session_id, outcome)
             history.append(outcome.as_openai())
-            yield ToolEvent(call.name, "finished", _result_status(result))
+            yield ToolEvent(call.name, "finished", output.status)
 
-    await _hand_over(deps, customer, session_id, text)
+    # The model is out of steps, but its tools may have changed things in the last round.
+    # The message is written here from the tools' own receipts, never by the model.
+    await _hand_over(deps, customer, session_id, text, calls_made)
+    message = " ".join([STEP_LIMIT_MESSAGE, *receipts])
     message_id = await store.save_message(
-        deps.sessions, session_id, AssistantContent(content=STEP_LIMIT_MESSAGE)
+        deps.sessions, session_id, AssistantContent(content=message)
     )
-    yield TextEvent(STEP_LIMIT_MESSAGE)
+    yield TextEvent(message)
     yield DoneEvent(message_id, (), 0, model_calls, prompt_tokens, completion_tokens)

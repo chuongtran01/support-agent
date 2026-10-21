@@ -130,8 +130,18 @@ def tool_schemas(tools: dict[str, ToolSpec] = TOOLS) -> list[dict[str, Any]]:
     ]
 
 
-def _error(status: str, message: str) -> str:
-    return json.dumps({"status": status, "message": message})
+@dataclass(frozen=True)
+class ToolOutput:
+    """One finished tool call: the JSON for the model, the result's status, and the receipt
+    for the customer if the call changed something."""
+
+    text: str
+    status: str
+    receipt: str | None = None
+
+
+def _error(status: str, message: str) -> ToolOutput:
+    return ToolOutput(json.dumps({"status": status, "message": message}), status)
 
 
 def _describe(error: ValidationError) -> str:
@@ -142,13 +152,13 @@ def _describe(error: ValidationError) -> str:
     return "The arguments are not valid. " + "; ".join(problems) + "."
 
 
-async def dispatch(
+async def run_tool(
     ctx: ToolContext,
     name: str,
     raw_arguments: str,
     tools: dict[str, ToolSpec] = TOOLS,
-) -> str:
-    """Run one tool call and return the JSON text for the model.
+) -> ToolOutput:
+    """Run one tool call and return its output.
 
     Each call gets its own transaction, committed when the tool returns and rolled back if
     it raises, so a tool that fails halfway writes nothing. The session must not already be
@@ -169,4 +179,14 @@ async def dispatch(
     except Exception:
         logger.exception("tool %s failed", name)
         return _error("error", "The tool failed and nothing was changed. Tell the customer.")
-    return result.model_dump_json(exclude_none=True)
+    return ToolOutput(result.model_dump_json(exclude_none=True), result.status, result.receipt())
+
+
+async def dispatch(
+    ctx: ToolContext,
+    name: str,
+    raw_arguments: str,
+    tools: dict[str, ToolSpec] = TOOLS,
+) -> str:
+    """Run one tool call and return only the JSON text for the model."""
+    return (await run_tool(ctx, name, raw_arguments, tools)).text

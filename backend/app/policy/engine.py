@@ -74,7 +74,7 @@ def _days_since(then: datetime, now: datetime) -> int:
     return (now.astimezone(UTC).date() - then.astimezone(UTC).date()).days
 
 
-def _dollars(cents: int) -> str:
+def dollars(cents: int) -> str:
     return f"${cents / 100:,.2f}"
 
 
@@ -151,10 +151,10 @@ def evaluate_refund(
         return verdict(
             "needs_approval",
             "over_threshold",
-            f"Refunds over {_dollars(config.approval_threshold_cents)} need approval, so this "
+            f"Refunds over {dollars(config.approval_threshold_cents)} need approval, so this "
             "refund is pending review.",
         )
 
     # 8. Nothing stops it
-    note = f", after the {_dollars(fee)} return label fee" if fee else ""
-    return verdict("allowed", "ok", f"The refund of {_dollars(amount)} can go ahead{note}.")
+    note = f", after the {dollars(fee)} return label fee" if fee else ""
+    return verdict("allowed", "ok", f"The refund of {dollars(amount)} can go ahead{note}.")

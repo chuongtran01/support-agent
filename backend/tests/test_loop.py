@@ -418,6 +418,9 @@ async def test_the_step_limit_opens_a_ticket_from_code_and_tells_the_customer(wo
         ("escalation", world.customers["alex"].id)
     ]
     assert "keep looking" in tickets[0].body
+    assert tickets[0].body.endswith(
+        "Tool calls made in this turn:\n- lookup_order: ok\n- lookup_order: ok\n- lookup_order: ok"
+    )
     stored = await saved(world, "alex", session_id)
     assert stored[-1].role == "assistant" and stored[-1].content.content == STEP_LIMIT_MESSAGE
 
@@ -520,3 +523,30 @@ async def test_a_stored_row_that_does_not_fit_its_role_fails_when_loaded(world):
         )
     with pytest.raises(ValidationError):
         await saved(world, "alex", session_id)
+
+
+async def test_a_refund_made_in_the_last_round_is_reported_to_the_customer_and_the_ticket(world):
+    item = world.item_id("BOOT-TR")
+    refund = call("c2", "issue_refund", order_item_id=item, quantity=1, reason_code="changed_mind")
+    lookup = call("c1", "lookup_order", order_id=world.order_id("alex-5d"))
+    llm = ScriptedLLM([call_tools(lookup), call_tools(refund)])
+    session_id, events = await world.turn(llm, "refund my boots", max_steps=2)
+
+    expected = f"{STEP_LIMIT_MESSAGE} A refund of $121.05 has been made."
+    assert texts(events) == expected
+    stored = await saved(world, "alex", session_id)
+    assert stored[-1].content.content == expected
+    async with world.sessions() as session:
+        ticket = (await session.scalars(select(models.Ticket))).one()
+    assert "- lookup_order: ok\n- issue_refund: allowed" in ticket.body
+
+
+async def test_every_receipt_from_the_last_rounds_is_added_in_order(world):
+    item = world.item_id("BOOT-TR")
+    ticket_call = call("c1", "create_ticket", subject="Zip", body="Stuck zipper")
+    refund = call("c2", "issue_refund", order_item_id=item, quantity=1, reason_code="changed_mind")
+    llm = ScriptedLLM([call_tools(ticket_call, refund)])
+    _, events = await world.turn(llm, "two things", max_steps=1)
+    message = texts(events)
+    assert message.startswith(STEP_LIMIT_MESSAGE)
+    assert message.index("support ticket") < message.index("refund of $121.05")

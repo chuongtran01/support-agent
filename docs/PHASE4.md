@@ -43,7 +43,7 @@ A turn, for one user message:
 2. Call the model with the history and the tool schemas, streaming. Text deltas are sent to the client as they arrive.
 3. If the reply has tool calls, save the assistant message, run each call with `dispatch`, save each result as a `tool` message, and go back to step 2.
 4. If the reply has no tool calls, save it as the final answer and finish.
-5. After `AGENT_MAX_STEPS` (6) model calls without a final answer, stop, open an escalation ticket from code, and tell the customer a person will follow up.
+5. After `AGENT_MAX_STEPS` (6) model calls without a final answer, stop, open an escalation ticket from code, and tell the customer a person will follow up. Tools in the last round still run, so the message and the ticket are written from what they did: every result can give a `receipt()` (for example "A refund of $121.05 has been made."), `run_tool` returns it with the status, and the loop appends the receipts to the message and lists each call in the ticket. The loop names no tool.
 
 Rules the loop keeps:
 

@@ -5,8 +5,20 @@ import pytest
 from app import models
 from app.policy.engine import ReasonCode
 from app.tools.context import ToolContext
-from app.tools.registry import TOOLS, CreateTicketArguments, ToolSpec, dispatch, tool_schemas
-from app.tools.results import TicketResult
+from app.tools.registry import (
+    TOOLS,
+    CreateTicketArguments,
+    ToolSpec,
+    dispatch,
+    run_tool,
+    tool_schemas,
+)
+from app.tools.results import (
+    IssueRefundResult,
+    LookupOrderResult,
+    SearchKnowledgeResult,
+    TicketResult,
+)
 from tests.test_tools import world  # noqa: F401  (fixture)
 
 
@@ -174,3 +186,72 @@ def test_every_tool_in_the_registry_has_a_handler_that_takes_a_context():
         "create_ticket",
         "escalate",
     }
+
+
+# Receipts ----------------------------------------------------------------
+
+
+async def test_run_tool_gives_the_status_and_a_receipt_for_a_change(world):  # noqa: F811
+    ctx, item = world.ctx("alex"), world.item("BOOT-TR")
+    arguments = json.dumps({"order_item_id": item, "quantity": 1, "reason_code": "changed_mind"})
+    output = await run_tool(ctx, "issue_refund", arguments)
+    assert (output.status, output.receipt) == ("allowed", "A refund of $121.05 has been made.")
+    assert json.loads(output.text)["status"] == "allowed"
+
+
+async def test_run_tool_has_no_receipt_when_nothing_changed(world):  # noqa: F811
+    ctx = world.ctx("alex")
+    output = await run_tool(ctx, "lookup_order", json.dumps({"order_id": world.order("alex-5d")}))
+    assert (output.status, output.receipt) == ("ok", None)
+
+
+async def test_a_refund_that_was_denied_has_no_receipt(world):  # noqa: F811
+    ctx, item = world.ctx("alex"), world.item("SHL-RN")  # bought as final sale
+    arguments = json.dumps({"order_item_id": item, "quantity": 1, "reason_code": "changed_mind"})
+    output = await run_tool(ctx, "issue_refund", arguments)
+    assert (output.status, output.receipt) == ("denied", None)
+
+
+@pytest.mark.parametrize(
+    ("name", "raw"),
+    [("nonexistent", "{}"), ("lookup_order", "{oops"), ("lookup_order", "{}")],
+)
+async def test_a_bad_call_has_the_invalid_status_and_no_receipt(name, raw):
+    output = await run_tool(no_database(), name, raw)
+    assert (output.status, output.receipt) == ("invalid_request", None)
+
+
+async def test_dispatch_is_run_tool_without_the_extras(world):  # noqa: F811
+    ctx = world.ctx("alex")
+    raw = json.dumps({"order_id": world.order("alex-5d")})
+    assert (
+        await dispatch(ctx, "lookup_order", raw) == (await run_tool(ctx, "lookup_order", raw)).text
+    )
+
+
+@pytest.mark.parametrize(
+    ("result", "receipt"),
+    [
+        (
+            IssueRefundResult(status="allowed", message="m", amount_cents=12105),
+            "A refund of $121.05 has been made.",
+        ),
+        (
+            IssueRefundResult(status="needs_approval", message="m", amount_cents=42900),
+            "A refund of $429.00 is waiting for approval.",
+        ),
+        (
+            IssueRefundResult(status="manual_review", message="m", amount_cents=5000),
+            "Your refund request has been passed to a person.",
+        ),
+        (IssueRefundResult(status="denied", message="m", amount_cents=5000), None),
+        (IssueRefundResult(status="invalid_request", message="m"), None),
+        (IssueRefundResult(status="not_found", message="m"), None),
+        (TicketResult(status="ok", ticket_id=12), "A support ticket (#12) has been opened."),
+        (TicketResult(status="invalid_request", message="m"), None),
+        (LookupOrderResult(status="ok"), None),
+        (SearchKnowledgeResult(status="ok", low_confidence=False), None),
+    ],
+)
+def test_each_result_words_its_own_receipt(result, receipt):
+    assert result.receipt() == receipt
