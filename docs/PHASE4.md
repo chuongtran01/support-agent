@@ -22,7 +22,7 @@ This is the first phase that needs an `OPENAI_API_KEY` to run the agent. Everyth
 - [x] **API**: `backend/app/api/`. Chat sessions, the streaming message endpoint, and the approver endpoints
 - [x] **Agent eval runner**: `evals/agent_eval.py` and the pure checks in `evals/agent_checks.py` (`make eval-agent`). Runs each case against freshly seeded data and reports pass rates
 - [x] **Repeat runs**: `--repeat N` plays each case N times; the results file has one entry per run with its run number, and the report lists the flaky cases (passed some runs, not all)
-- [ ] **Responses API**: move `OpenAIClient` (and the stream-to-event conversion) from Chat Completions to `/v1/responses`, so `gpt-6-luna` can use function tools with reasoning on. The `LLMClient` events and the loop stay the same; stored history is converted to the Responses format (carrying reasoning items between steps), reasoning effort becomes a real setting (low, medium, high), and the dev and test baselines are re-run and compared with the reasoning-off numbers below
+- [x] **Responses API**: `OpenAIClient` (`openai_client.py`) calls `/v1/responses`, so `gpt-6-luna` can use function tools with reasoning on. The `LLMClient` events and the loop are unchanged; stored messages are converted to Responses input items at the client, with `store=False`. Reasoning items are not carried between steps (the API accepts a conversation without them and they are not stored). Reasoning effort is the `AGENT_REASONING_EFFORT` setting (default `medium`). The dev and test baselines were re-run and are compared with the reasoning-off numbers below
 - [ ] **Tests**: `backend/tests/`. Login, scoping of every endpoint, the loop with a fake model, streaming, and approver rules; none needs an API key
 
 ## Architecture
@@ -185,25 +185,38 @@ None needs an API key or the network. The database tests use the same throwaway 
 
 ## Baseline
 
-Model `gpt-6-luna` on Chat Completions with `AGENT_REASONING_EFFORT=none` (the model rejects function tools with reasoning there; moving to the Responses API to allow reasoning is planned). One run per case.
+Model `gpt-6-luna` on the Responses API with `AGENT_REASONING_EFFORT=medium` and the tuned prompt. Dev is three runs of each case (111 runs); test is one run of each case (19).
 
-| | Dev (37) | Test (19) |
+| | Dev (37 x 3) | Test (19) |
 | --- | --- | --- |
-| Overall | 32/37 (86%) | 16/19 (84%) |
-| Refund outcome correct | 36/37 | 19/19 |
-| Required citations met | 11/12 | 6/6 |
+| Overall | 106/111 (96%) | 17/19 (90%) |
+| Cases that passed every run | 35/37 | n/a |
+| Refund outcome correct | 111/111 | 19/19 |
+| Tool-call accuracy | 218/222 | 38/38 |
+| Required citations met | 36/36 | 6/6 |
 | Cited but never retrieved | 0 | 0 |
 | Seeded refunds changed, or records of another customer | 0 | 0 |
-| Model calls / tokens per case | 2.6 / 4,449 | 2.95 / 5,265 |
+| Model calls / tokens per case | 2.5 / 4,196 | 2.7 / 4,397 |
 
-Before tuning, the same dev split scored 30/37 on `gpt-5` with reasoning and 30/37 on `gpt-6-luna` without. Tuning on dev changed the prompt (call `issue_refund` and let the engine decide, never refund a different quantity, answer with conditions instead of escalating, compare passages for disagreement) and fixed checks that were too strict (curly apostrophes, a phrase inside a correct answer).
+Known failures. Dev: a011 (standard shipping price: the stale-page trap; the answer misses `$7.95` and sometimes escalates) fails every run, and a013 (the conflicting return windows inside a personal question) passes one run in three. Test: a010 (refund frequency: the answer lacks the 3 and 90) and a023 (does not say a gift card can be combined with another payment). Both test failures are missing details, not wrong tools or refunds; the test split was not tuned on.
 
-Known failures: the two conflicting return windows (the model sees both passages and answers from one), the buried tent trial pitch (escalates after answering), and a refund request where the customer names an amount or reports a defect (sometimes asks or opens a ticket instead of calling `issue_refund`). Test failures: a010 (refund frequency numbers), a017 (escalated on the buried exception), a023 (did not say gift cards can be combined).
+**How it got here** (dev, one run unless noted):
+
+| Step | Dev | Test |
+| --- | --- | --- |
+| `gpt-5`, Chat Completions, reasoning on, first prompt | 30/37 | not run |
+| `gpt-6-luna`, Chat Completions, reasoning off, first prompt | 30/37 | not run |
+| the same, after prompt and check fixes | 32/37 | 16/19 |
+| Responses API, `medium` reasoning, same prompt | 32/37 (95/111 over three runs) | not run |
+| Responses API, `medium`, refund wording tuned | 106/111 over three runs | 17/19 |
+
+The prompt changes on dev were: call `issue_refund` and let the engine decide, never refund a different quantity, answer with conditions instead of escalating, compare passages for disagreement, and treat "I want to return this" as a refund request (no policy search, no question about the reason, `changed_mind` when none is given, a reported fault is a `defect`). Two checks were too strict and were fixed (curly apostrophes, a phrase inside a correct answer). Before the refund wording was tuned, four refund cases (a027, a032, a047, a055) failed every run: with reasoning on, the model searched the policy and decided eligibility itself instead of calling `issue_refund`.
 
 ## Decisions to confirm
 
 - **Bearer token (JWT) rather than server-side sessions.** Simple and stateless, and the frontend reads a streamed `fetch` anyway. The cost is that a token cannot be revoked before it expires; the 8-hour life and the role read from the database limit that.
-- **Chat Completions API rather than the Responses API.** The message format is the common one and replays cleanly from JSON. The Responses API would add server-side state that this design keeps in Postgres.
+- **Responses API with `store=False`.** `gpt-6-luna` only allows function tools with reasoning on the Responses API, and it is where OpenAI adds new features. The conversation stays in Postgres: the client converts stored messages to input items on every call and asks the server not to keep them. The cost is that reasoning is not carried between steps.
+- **A reason is not asked for; `changed_mind` is the default.** A clear return request goes straight to `issue_refund`. The cost is that a customer who gave no reason, with a faulty item, can have the return label fee taken off; the result message states the amount.
 - **`search_knowledge` is a registry tool.** One path for validation, errors and later tracing. The cost is an `embedder` on every `ToolContext`, unused by the action tools.
 - **The turn survives a closed connection.** Safer for money, at the cost of a background task and a queue. The alternative, cancelling on disconnect, can leave an executed refund out of the saved conversation.
 - **Advisory low-confidence flag, not a hard threshold.** The Phase 2 scores overlap, so a hard cut would refuse real questions or answer nonsense.
