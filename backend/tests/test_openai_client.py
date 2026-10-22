@@ -14,26 +14,19 @@ from openai.types.responses import (
     ResponseUsage,
 )
 
-from app.agent.llm import (
-    Done,
-    LLMError,
-    OpenAIClient,
-    ScriptedLLM,
-    TextDelta,
-    ToolCall,
-    Usage,
-    call_tools,
-    events_from_responses,
-    say,
-    to_responses_input,
-    to_responses_tools,
-)
+from app.agent.llm import Done, LLMError, TextDelta, ToolCall, Usage
 from app.agent.messages import (
     AssistantContent,
     FunctionCall,
     StoredToolCall,
     ToolContent,
     UserContent,
+)
+from app.agent.openai_client import (
+    OpenAIClient,
+    events_from_responses,
+    to_responses_input,
+    to_responses_tools,
 )
 from app.tools.registry import ToolSchema
 
@@ -165,30 +158,6 @@ def test_an_assistant_message_with_text_and_calls_keeps_both_in_order():
 
 
 def test_the_openai_client_needs_a_key(monkeypatch):
-    monkeypatch.setattr("app.agent.llm.settings.openai_api_key", "")
+    monkeypatch.setattr("app.agent.openai_client.settings.openai_api_key", "")
     with pytest.raises(RuntimeError, match="OPENAI_API_KEY"):
         OpenAIClient()
-
-
-async def test_the_script_plays_one_reply_per_call_and_records_the_calls():
-    llm = ScriptedLLM([say("Hi there"), call_tools(ToolCall("c1", "escalate", "{}"))])
-    tool = ToolSchema("t", "d", {})
-    first = await collect(llm.stream("be brief", [UserContent(content="hi")], [tool]))
-    second = await collect(llm.stream("be brief", [UserContent(content="again")], []))
-    assert "".join(e.text for e in first if isinstance(e, TextDelta)) == "Hi there"
-    assert second == [ToolCall("c1", "escalate", "{}"), Done()]
-    assert [c["messages"][0].content for c in llm.calls] == ["hi", "again"]
-    assert llm.calls[0]["system"] == "be brief"
-    assert llm.calls[0]["tools"] == [tool]
-
-
-async def test_a_reply_without_done_gets_one():
-    llm = ScriptedLLM([[TextDelta("x")]])
-    assert (await collect(llm.stream("", [], [])))[-1] == Done()
-
-
-async def test_calling_the_model_more_often_than_scripted_fails():
-    llm = ScriptedLLM([say("only one")])
-    await collect(llm.stream("", [], []))
-    with pytest.raises(AssertionError):
-        await collect(llm.stream("", [], []))

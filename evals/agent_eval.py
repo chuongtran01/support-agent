@@ -38,9 +38,9 @@ from sqlalchemy import select
 from app import models
 from app.agent import store
 from app.agent.events import DoneEvent, ErrorEvent
-from app.agent.llm import OpenAIClient
 from app.agent.loop import AgentDeps, run_turn
 from app.agent.messages import AssistantContent, ToolContent
+from app.agent.openai_client import OpenAIClient
 from app.auth import to_current
 from app.db import SessionLocal, engine
 from app.retrieval.embeddings import OpenAIEmbedder

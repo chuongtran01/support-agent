@@ -16,7 +16,7 @@ from app.agent.events import (
     TextEvent,
     ToolEvent,
 )
-from app.agent.llm import Done, LLMError, ScriptedLLM, TextDelta, ToolCall, Usage, call_tools, say
+from app.agent.llm import Done, LLMError, TextDelta, ToolCall, Usage
 from app.agent.loop import (
     MODEL_UNAVAILABLE_MESSAGE,
     NO_ANSWER_MESSAGE,
@@ -35,6 +35,7 @@ from app.auth import CurrentCustomer
 from app.retrieval.search import SearchResult
 from app.seed import seed
 from app.tools import knowledge
+from tests.scripted_llm import ScriptedLLM, call_tools, say
 
 NOW = datetime(2026, 6, 15, 12, 0, tzinfo=UTC)
 

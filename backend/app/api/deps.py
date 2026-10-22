@@ -12,7 +12,8 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app import models
-from app.agent.llm import LLMClient, OpenAIClient
+from app.agent.llm import LLMClient
+from app.agent.openai_client import OpenAIClient
 from app.agent.runner import TurnRunner
 from app.auth import CurrentCustomer, read_token, to_current
 from app.db import SessionLocal, get_session

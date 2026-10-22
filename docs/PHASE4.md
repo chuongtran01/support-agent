@@ -15,7 +15,7 @@ This is the first phase that needs an `OPENAI_API_KEY` to run the agent. Everyth
 
 - [x] **Agent eval cases**: `evals/datasets/agent.dev.jsonl` (37 rows) and `agent.test.jsonl` (19 rows), with the schema and loader in `evals/agent_cases.py`. Scenarios built from `traps.yaml` and from the tool behaviors: the customer, what they say, the tools that must (or must not) be called with which arguments, the refunds the run must add, and what the answer must (or must not) contain
 - [x] **Login and tokens**: `backend/app/auth.py` (password hashing, signed tokens, logging in) and `POST /auth/login`, with the `current_customer` and `require_approver` dependencies in `api/deps.py`. The seed gets a real demo password
-- [x] **Model interface**: `backend/app/agent/llm.py`. A thin `LLMClient` protocol, the OpenAI implementation, and a scripted fake for tests
+- [x] **Model interface**: `backend/app/agent/llm.py` (the `LLMClient` protocol and its events, with no provider import), `openai_client.py` (the OpenAI implementation) and `backend/tests/scripted_llm.py` (a scripted fake for tests)
 - [x] **Knowledge tool**: `search_knowledge` added to the tool registry, returning passages with their status, date, heading path and a low-confidence flag
 - [x] **Prompt**: `backend/app/agent/prompt.py`. The system prompt, built per turn with the customer's name and membership from the database
 - [x] **Agent loop**: `backend/app/agent/loop.py`. One user message in, a stream of events out; calls the model, dispatches tool calls, stores every message, stops at a step limit
@@ -35,7 +35,7 @@ POST /sessions/{id}/messages
              every message saved as it is produced
 ```
 
-Each piece does one thing: `auth` decides who is calling, `llm` talks to the provider, `loop` decides what happens next, the registry runs tools, and the API turns events into HTTP. The loop imports no FastAPI and the API imports no OpenAI, so the loop is tested without either. The same rule holds across the backend: only `api/` and `main.py` import FastAPI. `agent/runner.py` runs a turn as a background task, `api/sse.py` writes events as server-sent events, and `approvals.py` holds the approver's side (`list_pending`, `decide_refund`), which is why it is not in `tools/`.
+Each piece does one thing: `auth` decides who is calling, `llm` is the interface to the model and `openai_client` talks to the provider, `loop` decides what happens next, the registry runs tools, and the API turns events into HTTP. The loop imports no FastAPI and the API imports no OpenAI, so the loop is tested without either. The same rule holds across the backend: only `api/` and `main.py` import FastAPI. `agent/runner.py` runs a turn as a background task, `api/sse.py` writes events as server-sent events, and `approvals.py` holds the approver's side (`list_pending`, `decide_refund`), which is why it is not in `tools/`.
 
 ## Agent loop
 
@@ -63,7 +63,9 @@ Rules the loop keeps:
 
 ```python
 class LLMClient(Protocol):
-    def stream(self, messages: list[dict], tools: list[dict]) -> AsyncIterator[LLMEvent]: ...
+    def stream(
+        self, system: str, messages: Sequence[MessageContent], tools: Sequence[ToolSchema]
+    ) -> AsyncIterator[LLMEvent]: ...
 ```
 
 A client signals a provider failure by raising `LLMError`, the only error the loop catches: it ends the turn with an `error` event and keeps the saved question, while any other exception is a bug and surfaces. `LLMEvent` is a text delta, a finished tool call, or the end of the reply with its token usage. The OpenAI implementation uses the Chat Completions API with `tools`; the fake returns a scripted list of events, which is how the loop's tests run. The loop is split into small functions (call the model, run one tool, save a message) so phase 6 can wrap each in a trace span without restructuring it.

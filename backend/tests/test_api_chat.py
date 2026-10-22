@@ -9,7 +9,7 @@ from sqlalchemy import select
 from app import models
 from app.agent import store
 from app.agent.events import Citation, DoneEvent, ErrorEvent, TextEvent, ToolEvent
-from app.agent.llm import LLMError, ScriptedLLM, TextDelta, ToolCall, call_tools, say
+from app.agent.llm import LLMError, TextDelta, ToolCall
 from app.agent.loop import MODEL_UNAVAILABLE_MESSAGE, AgentDeps
 from app.agent.messages import (
     AssistantContent,
@@ -26,6 +26,7 @@ from app.main import app
 from app.retrieval.search import SearchResult
 from app.tools import knowledge
 from tests.api_world import NOW, FakeEmbedder, parse_sse
+from tests.scripted_llm import ScriptedLLM, call_tools, say
 
 
 def lookup(api_, key, call_id="c1"):
