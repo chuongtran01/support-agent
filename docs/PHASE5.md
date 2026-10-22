@@ -1,6 +1,6 @@
 # Phase 5: Frontend
 
-**Status:** planned
+**Status:** in progress (step 1 of 7 done)
 **Gate:** full demo flow works
 
 ## Goal
@@ -11,7 +11,7 @@ The backend is not expected to change. If the UI turns out to need an endpoint, 
 
 ## Deliverables
 
-- [ ] **App scaffold**: `frontend/`, Next.js (App Router) with TypeScript, Tailwind and shadcn/ui, `npm` scripts for dev, build, lint, type-check and tests, and `make` targets for them
+- [x] **App scaffold**: `frontend/`, Next.js 16 (App Router) with TypeScript, Tailwind 4 and shadcn/ui, Vitest with Testing Library, `npm` scripts for dev, build, lint, type-check and tests, and `make` targets for them (`make frontend-install`, `frontend-dev`, `frontend-build`, `frontend-check`)
 - [ ] **API client and types**: `frontend/src/api/`. A typed client for every endpoint, with the request and response types generated from the backend's OpenAPI spec (`make api-types`) so they cannot drift, and hand-written types for the stream events (OpenAPI does not describe them)
 - [ ] **Login and session**: `/login` with a one-click button per seeded demo customer and the approver, the token kept for the tab, a header with the customer's name and membership, log out, and a redirect to `/login` on any `401`
 - [ ] **Stream reader**: `fetch` with the `Authorization` header and a small server-sent-events parser, because `EventSource` cannot send headers. Pure functions, unit tested
@@ -59,7 +59,7 @@ A table of pending refunds from `GET /approvals`, oldest first, with the amount 
 
 ### Look and feel
 
-Plain, readable and responsive down to a phone width. The components come from shadcn/ui, which is built on Radix primitives and Tailwind and is copied into `frontend/src/components/ui/` by its CLI, so they are our own files. The ones this phase uses:
+Plain, readable and responsive down to a phone width. The components come from shadcn/ui, which is built on headless primitives (Base UI in the current default style) and Tailwind and is copied into `frontend/src/components/ui/` by its CLI, so they are our own files. The ones this phase uses:
 
 | Part of the UI | shadcn component |
 | --- | --- |
@@ -71,7 +71,7 @@ Plain, readable and responsive down to a phone width. The components come from s
 | Confirming approve or reject | `AlertDialog` |
 | Errors and "answering..." notes | `Alert`, `Sonner` toasts |
 
-Radix gives the keyboard and screen-reader behavior of the dialogs, popovers and drawers. The thread is a live region so a screen reader announces the answer, the composer submits on Enter and takes a new line on Shift+Enter, and focus returns to the composer after a turn.
+The primitives give the keyboard and screen-reader behavior of the dialogs, popovers and drawers. The thread is a live region so a screen reader announces the answer, the composer submits on Enter and takes a new line on Shift+Enter, and focus returns to the composer after a turn.
 
 ## Tests
 
@@ -96,7 +96,7 @@ Run in a browser against the real backend, the seeded database and the real mode
 
 ## Build order
 
-- [ ] 1. Scaffold the app, the `make` targets and the CI-free checks (type-check, lint, tests).
+- [x] 1. Scaffold the app, the `make` targets and the checks (type-check, lint, tests). Notes: the installed Next.js (16.4) is newer than most documentation, so framework code is written against the docs in `node_modules/next/dist/docs/` (`AGENTS.md` says so); the scaffold turns on Cache Components and Partial Prefetching, which are turned off here because there is nothing to prerender and hidden routes staying mounted would interact with a streaming answer; Vitest needed `vite` and `@testing-library/dom` installed explicitly; `npm audit` reports a high-severity `braces` advisory reached only through the lint config and the shadcn CLI, with no fix that does not downgrade them.
 - [ ] 2. The API client, the generated types and the stream parser, with the unit tests.
 - [ ] 3. Login, the token, the header and the route guards.
 - [ ] 4. The chat reducer and the chat page (thread, composer, sources), with the unit and browser tests.

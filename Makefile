@@ -1,4 +1,4 @@
-.PHONY: up down db-reset migrate seed install test lint eval-retrieval eval-agent
+.PHONY: up down db-reset migrate seed install test lint eval-retrieval eval-agent frontend-install frontend-dev frontend-build frontend-check
 
 up:
 	docker compose up -d db
@@ -29,3 +29,15 @@ eval-retrieval:
 
 eval-agent:
 	cd backend && .venv/bin/python ../evals/agent_eval.py $(ARGS)
+
+frontend-install:
+	cd frontend && npm install
+
+frontend-dev:
+	cd frontend && npm run dev
+
+frontend-build:
+	cd frontend && npm run build
+
+frontend-check:
+	cd frontend && npm run typecheck && npm run lint && npm test
