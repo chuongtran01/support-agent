@@ -107,6 +107,7 @@ class OpenAIClient:
                 model=self._model,
                 messages=messages,
                 tools=tools,
+                reasoning_effort=settings.agent_reasoning_effort,
                 stream=True,
                 stream_options={"include_usage": True},
             )
