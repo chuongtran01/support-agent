@@ -6,8 +6,8 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+psycopg://support:support@localhost:5433/support"
     openai_api_key: str = ""
-    agent_model: str = "gpt-5"
-    judge_model: str = "gpt-5-mini"
+    agent_model: str = "gpt-6-luna"
+    judge_model: str = "gpt-6-luna"
     embedding_model: str = "text-embedding-3-small"
     refund_approval_threshold: int = 200
     # Model calls in one turn before the agent gives up and hands the chat to a person

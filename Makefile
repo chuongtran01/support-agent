@@ -1,4 +1,4 @@
-.PHONY: up down db-reset migrate seed install test lint eval-retrieval
+.PHONY: up down db-reset migrate seed install test lint eval-retrieval eval-agent
 
 up:
 	docker compose up -d db
@@ -26,3 +26,6 @@ lint:
 
 eval-retrieval:
 	cd backend && .venv/bin/python ../evals/retrieval_eval.py $(ARGS)
+
+eval-agent:
+	cd backend && .venv/bin/python ../evals/agent_eval.py $(ARGS)

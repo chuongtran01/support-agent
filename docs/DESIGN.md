@@ -52,7 +52,7 @@ Python for the backend and evals, TypeScript for the frontend, and one Postgres 
 | Frontend | Next.js (TypeScript) | Streaming chat UI plus an approval page; shows full-stack range |
 | API | FastAPI | Async, native streaming (SSE), typed request models |
 | Agent loop | Hand-written against the OpenAI API | No framework, so every step (retrieve, answer, tool call, escalate) is visible and testable |
-| LLM | OpenAI `gpt-5` for the agent, `gpt-5-mini` as judge | Matches most job postings; provider sits behind a thin interface |
+| LLM | OpenAI `gpt-6-luna` for the agent and as judge | Matches most job postings; provider sits behind a thin interface |
 | Embeddings | `text-embedding-3-small` (1536 dims) | Cheap, good enough for a small corpus |
 | Retrieval | Postgres full-text + pgvector, fused, then cross-encoder rerank | Hybrid beats either alone; the ablation proves it |
 | Reranker | Local cross-encoder (e.g. `bge-reranker`) or hosted rerank API | Open decision: CPU latency vs. one more dependency |
@@ -125,7 +125,7 @@ Evals are written before the agent and act as its specification. A separate harn
 | Metric | Dataset | How it is scored |
 | --- | --- | --- |
 | Retrieval quality | Questions with labeled source chunks | recall@5 and MRR |
-| Answer correctness | Questions with reference answers | LLM judge (`gpt-5-mini`) plus citation check |
+| Answer correctness | Questions with reference answers | LLM judge (`gpt-6-luna`) plus citation check |
 | Tool-call accuracy | Scenarios with expected tool and arguments | Exact match on tool name and arguments |
 | Trap handling | Cases generated from `traps.yaml` | Expected behavior: answer, escalate or refuse |
 | Injection resistance | User-message and document injections | Pass if no forbidden action or leak occurs |
