@@ -190,6 +190,38 @@ def stability(cases: list[AgentCase], outcomes: list[tuple[RunRecord, CaseResult
     return {"every_run": len(every), "no_run": len(none), "flaky": flaky, "cases": len(passes)}
 
 
+def run_numbers(cases: list[AgentCase]) -> list[int]:
+    """For each entry, which run of its case it is, counting from 1."""
+    seen: dict[str, int] = defaultdict(int)
+    numbers = []
+    for case in cases:
+        seen[case.id] += 1
+        numbers.append(seen[case.id])
+    return numbers
+
+
+def label(case: AgentCase, number: int, repeated: bool) -> str:
+    return f"{case.id} (run {number})" if repeated else case.id
+
+
+def case_details(cases: list[AgentCase], outcomes: list[tuple[RunRecord, CaseResult]]) -> list:
+    """One entry per run, for the results file. ``run`` counts a case's runs from 1."""
+    details = []
+    for case, number, (run, result) in zip(cases, run_numbers(cases), outcomes, strict=True):
+        details.append(
+            {
+                "id": case.id,
+                "run": number,
+                "category": case.category,
+                "passed": result.passed,
+                "checks": result.checks,
+                "problems": result.problems,
+                "turns": [asdict(turn) for turn in run.turns],
+            }
+        )
+    return details
+
+
 def _percent(entry: dict) -> str:
     rate = entry["rate"]
     return f"{entry['passed']}/{entry['total']}" + (f" ({rate:.0%})" if rate is not None else "")
@@ -218,11 +250,16 @@ def print_report(summary: dict, cases: list[AgentCase], outcomes: list) -> None:
         )
         for case_id, rate in steady["flaky"].items():
             print(f"  flaky {case_id} {rate}")
-    failed = [(c, r) for c, (_, r) in zip(cases, outcomes, strict=True) if not r.passed]
+    repeated = len(cases) > summary["stability"]["cases"]
+    failed = [
+        (c, n, r)
+        for c, n, (_, r) in zip(cases, run_numbers(cases), outcomes, strict=True)
+        if not r.passed
+    ]
     if failed:
         print("\nFailed cases")
-        for case, result in failed:
-            print(f"  {case.id} [{case.category}] {case.description}")
+        for case, number, result in failed:
+            print(f"  {label(case, number, repeated)} [{case.category}] {case.description}")
             for problem in result.problems:
                 print(f"      {problem}")
 
@@ -235,10 +272,11 @@ async def main(split: str, only: list[str] | None, repeat: int) -> None:
     deps = AgentDeps(sessions=SessionLocal, llm=OpenAIClient(), embedder=OpenAIEmbedder())
     outcomes = []
     try:
-        for number, case in enumerate(cases, start=1):
+        for number, (case, run_number) in enumerate(zip(cases, run_numbers(cases), strict=True), 1):
             run, result = await run_case(deps, case)
             outcomes.append((run, result))
-            print(f"[{number}/{len(cases)}] {case.id} {'pass' if result.passed else 'FAIL'}")
+            name = label(case, run_number, repeat > 1)
+            print(f"[{number}/{len(cases)}] {name} {'pass' if result.passed else 'FAIL'}")
     finally:
         await engine.dispose()
 
@@ -247,17 +285,7 @@ async def main(split: str, only: list[str] | None, repeat: int) -> None:
     RESULTS.mkdir(exist_ok=True)
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     path = RESULTS / f"agent-{split}-{stamp}.json"
-    detail = [
-        {
-            "id": case.id,
-            "category": case.category,
-            "passed": result.passed,
-            "checks": result.checks,
-            "problems": result.problems,
-            "turns": [asdict(turn) for turn in run.turns],
-        }
-        for case, (run, result) in zip(cases, outcomes, strict=True)
-    ]
+    detail = case_details(cases, outcomes)
     path.write_text(json.dumps({"split": split, "summary": summary, "cases": detail}, indent=2))
     print(f"\nWrote {path}")
 

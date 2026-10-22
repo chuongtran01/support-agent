@@ -80,7 +80,7 @@ make eval-agent ARGS="--repeat 3"                # three runs of each case, to s
 make eval-agent ARGS="--split test"              # held-out split; do not tune on it
 ```
 
-Each case is played through the real agent and model on freshly seeded data, and the result is checked in code: tools called, refunds made, text in the answer, citations, and that no other customer's data was touched. It calls the OpenAI API (a dev run is about 160k tokens) and **resets the business tables of the database in `DATABASE_URL`**, as `make seed` does. The report gives pass rates overall, per category and per trap, plus tokens per case, and a JSON file with every run goes to `evals/results/` (git-ignored). The cases and the recorded baseline are described in `docs/PHASE4.md`.
+Each case is played through the real agent and model on freshly seeded data, and the result is checked in code: tools called, refunds made, text in the answer, citations, and that no other customer's data was touched. It calls the OpenAI API (a dev run is about 160k tokens) and **resets the business tables of the database in `DATABASE_URL`**, as `make seed` does. The report gives pass rates overall, per category and per trap, plus tokens per case, and a JSON file with every run (numbered per case) goes to `evals/results/` (git-ignored). The cases and the recorded baseline are described in `docs/PHASE4.md`.
 
 ## Changing the schema
 

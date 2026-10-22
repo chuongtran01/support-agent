@@ -21,6 +21,7 @@ This is the first phase that needs an `OPENAI_API_KEY` to run the agent. Everyth
 - [x] **Agent loop**: `backend/app/agent/loop.py`. One user message in, a stream of events out; calls the model, dispatches tool calls, stores every message, stops at a step limit
 - [x] **API**: `backend/app/api/`. Chat sessions, the streaming message endpoint, and the approver endpoints
 - [x] **Agent eval runner**: `evals/agent_eval.py` and the pure checks in `evals/agent_checks.py` (`make eval-agent`). Runs each case against freshly seeded data and reports pass rates
+- [x] **Repeat runs**: `--repeat N` plays each case N times; the results file has one entry per run with its run number, and the report lists the flaky cases (passed some runs, not all)
 - [ ] **Tests**: `backend/tests/`. Login, scoping of every endpoint, the loop with a fake model, streaming, and approver rules; none needs an API key
 
 ## Architecture
