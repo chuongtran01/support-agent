@@ -85,3 +85,7 @@ def test_a_full_case_records_every_named_check():
     c = case(required_citations=["shipping-rates"])
     result = check_case(c, run([turn(cited=["shipping-rates"])]), [])
     assert set(result.checks) == set(get_args(CheckName))
+
+
+def test_includes_treats_curly_and_straight_apostrophes_alike():
+    assert includes("Gift cards can’t be returned", "can't be returned")

@@ -99,10 +99,15 @@ def tools_in_order(expected: list[tuple[str, dict[str, Any]]], made: list[ToolRu
     return True
 
 
+def _plain(text: str) -> str:
+    """Lower case, with the curly apostrophes the model likes written as straight ones."""
+    return text.lower().replace("\u2019", "'")
+
+
 def includes(text: str, wanted: str) -> bool:
     """True if the text holds the wanted string, or any ``a|b`` alternative, ignoring case."""
-    lowered = text.lower()
-    return any(part.strip().lower() in lowered for part in wanted.split("|"))
+    lowered = _plain(text)
+    return any(_plain(part.strip()) in lowered for part in wanted.split("|"))
 
 
 def new_refunds(run: RunRecord) -> list[RefundRow]:

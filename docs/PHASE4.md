@@ -1,6 +1,6 @@
 # Phase 4: Agent loop and API
 
-**Status:** in progress (step 5 of 6 done)
+**Status:** in progress (step 6 of 6 done; gate items left)
 **Gate:** trap and tool evals run
 
 ## Goal
@@ -20,7 +20,7 @@ This is the first phase that needs an `OPENAI_API_KEY` to run the agent. Everyth
 - [x] **Prompt**: `backend/app/agent/prompt.py`. The system prompt, built per turn with the customer's name and membership from the database
 - [x] **Agent loop**: `backend/app/agent/loop.py`. One user message in, a stream of events out; calls the model, dispatches tool calls, stores every message, stops at a step limit
 - [x] **API**: `backend/app/api/`. Chat sessions, the streaming message endpoint, and the approver endpoints
-- [ ] **Agent eval runner**: `evals/agent_eval.py` (`make eval-agent`). Runs each case against a freshly seeded test database and reports pass rates
+- [x] **Agent eval runner**: `evals/agent_eval.py` and the pure checks in `evals/agent_checks.py` (`make eval-agent`). Runs each case against freshly seeded data and reports pass rates
 - [ ] **Tests**: `backend/tests/`. Login, scoping of every endpoint, the loop with a fake model, streaming, and approver rules; none needs an API key
 
 ## Architecture
@@ -113,7 +113,7 @@ Every endpoint is `async def`. The customer always comes from the token; no endp
 
 ## Agent eval
 
-`evals/agent_eval.py` runs each case with the real model. For every case it reseeds the test database, logs in as the case's customer, plays the user messages through the loop, and checks the result with code. There is no model judge in this phase.
+`evals/agent_eval.py` runs each case with the real model. For every case it reseeds the business tables of the database in `DATABASE_URL` (the knowledge base is left as ingested, so this is the dev database), logs in as the case's customer, plays the user messages through the loop, and checks the result with code. There is no model judge in this phase.
 
 Every row has the same fourteen fields (`evals/agent_cases.py` validates them, rejects unknown fields, and checks document, trap and tool names):
 
@@ -148,7 +148,7 @@ Every row has the same fourteen fields (`evals/agent_cases.py` validates them, r
 
 **Metrics:** pass rate overall and per category; tool-call accuracy (name and arguments match, no forbidden tool); trap pass rate per trap; refund outcome correct; citations that match retrieved documents; the count of cited ids that were never retrieved; model calls and tokens per case. The output goes to `evals/results/` like the retrieval eval.
 
-**Dev and test.** The dev file is for tuning the prompt and the loop. The test file is held out and run once with `--split test`. A model gives different answers on each run, so the runner has `--repeat N` to measure how stable a case is, and the baseline records one run of each case plus a three-run pass rate on dev. Judged answer quality, cost and latency tables, and the reranker ablation belong to phase 6.
+**Dev and test.** The dev file is for tuning the prompt and the loop. The test file is held out and run once with `--split test`. A model gives different answers on each run: in the dev runs below, single cases flipped between pass and fail with no prompt change. The runner has no `--repeat N` yet, so the baseline is one run of each case; a three-run pass rate on dev is still to do. Judged answer quality, cost and latency tables, and the reranker ablation belong to phase 6.
 
 ## Tests
 
@@ -169,15 +169,32 @@ None needs an API key or the network. The database tests use the same throwaway 
 - [x] 3. The model interface, the fake, `search_knowledge` and the prompt.
 - [x] 4. The agent loop and its tests.
 - [x] 5. The API and its tests.
-- [ ] 6. The eval runner; run dev, tune the prompt on dev only, run the test split once and record the baseline.
+- [x] 6. The eval runner; run dev, tune the prompt on dev only, run the test split once and record the baseline.
 
 ## Gate check
 
-- [ ] **Evals run**: `make eval-agent` runs both splits and writes the metrics above
-- [ ] **Baseline**: dev and test numbers recorded in this file
+- [x] **Evals run**: `make eval-agent` runs both splits and writes the metrics above
+- [x] **Baseline**: dev and test numbers recorded in this file (below)
 - [ ] **Scoping**: every endpoint is scoped to the token's customer; none takes a customer id
 - [ ] **Approver endpoints**: role-checked on every call, with `decide_refund` re-checking
 - [ ] **Tests**: `pytest` passes with no API key
+
+## Baseline
+
+Model `gpt-6-luna` on Chat Completions with `AGENT_REASONING_EFFORT=none` (the model rejects function tools with reasoning there; moving to the Responses API to allow reasoning is planned). One run per case.
+
+| | Dev (37) | Test (19) |
+| --- | --- | --- |
+| Overall | 32/37 (86%) | 16/19 (84%) |
+| Refund outcome correct | 36/37 | 19/19 |
+| Required citations met | 11/12 | 6/6 |
+| Cited but never retrieved | 0 | 0 |
+| Seeded refunds changed, or records of another customer | 0 | 0 |
+| Model calls / tokens per case | 2.6 / 4,449 | 2.95 / 5,265 |
+
+Before tuning, the same dev split scored 30/37 on `gpt-5` with reasoning and 30/37 on `gpt-6-luna` without. Tuning on dev changed the prompt (call `issue_refund` and let the engine decide, never refund a different quantity, answer with conditions instead of escalating, compare passages for disagreement) and fixed checks that were too strict (curly apostrophes, a phrase inside a correct answer).
+
+Known failures: the two conflicting return windows (the model sees both passages and answers from one), the buried tent trial pitch (escalates after answering), and a refund request where the customer names an amount or reports a defect (sometimes asks or opens a ticket instead of calling `issue_refund`). Test failures: a010 (refund frequency numbers), a017 (escalated on the buried exception), a023 (did not say gift cards can be combined).
 
 ## Decisions to confirm
 
