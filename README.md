@@ -45,6 +45,8 @@ cd backend
 
 Log in with `POST /auth/login` (for example `alex@example.com` and the seed password), then send the token as `Authorization: Bearer ...`. A message is `POST /sessions/{id}/messages` and the answer streams back as server-sent events (`curl -N` shows them). The agent needs `OPENAI_API_KEY` and the knowledge base loaded (next section).
 
+The agent model is `AGENT_MODEL` (default `gpt-6-luna`). That model only accepts function tools on Chat Completions with reasoning turned off, so `AGENT_REASONING_EFFORT` defaults to `none`; change both together if you switch models.
+
 ## Load the knowledge base
 
 Set `OPENAI_API_KEY` in `.env` (embeddings use `text-embedding-3-small`), then:
@@ -68,6 +70,17 @@ make eval-retrieval ARGS="--split test"          # held-out split; do not tune o
 ```
 
 It prints recall@5, MRR and the other metrics per mode and writes a JSON file with every question's ranked results to `evals/results/` (git-ignored). Details and the recorded baseline are in `docs/PHASE2.md`.
+
+## Run the agent eval
+
+```sh
+make eval-agent                                  # dev split, one run of each case
+make eval-agent ARGS="--only a001 a002"          # just these cases
+make eval-agent ARGS="--repeat 3"                # three runs of each case, to see which are flaky
+make eval-agent ARGS="--split test"              # held-out split; do not tune on it
+```
+
+Each case is played through the real agent and model on freshly seeded data, and the result is checked in code: tools called, refunds made, text in the answer, citations, and that no other customer's data was touched. It calls the OpenAI API (a dev run is about 160k tokens) and **resets the business tables of the database in `DATABASE_URL`**, as `make seed` does. The report gives pass rates overall, per category and per trap, plus tokens per case, and a JSON file with every run goes to `evals/results/` (git-ignored). The cases and the recorded baseline are described in `docs/PHASE4.md`.
 
 ## Changing the schema
 

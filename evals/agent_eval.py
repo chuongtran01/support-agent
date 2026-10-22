@@ -2,13 +2,14 @@
 
 Run from ``backend/`` (``make eval-agent``):
 
-    python ../evals/agent_eval.py [--split dev|test] [--only a001 a002 ...]
+    python ../evals/agent_eval.py [--split dev|test] [--only a001 a002 ...] [--repeat N]
 
 Each case starts from freshly seeded customers, orders and refunds (the knowledge base is
 left as ingested), logs in as the case's customer, and sends the messages one after another
 through the agent loop with the real model. This calls the OpenAI API: expect a few model
 calls per case. Tune the prompt against the dev split. The test split is held out: read its
-numbers, do not tune on them.
+numbers, do not tune on them. A model answers differently each time, so ``--repeat N`` plays
+each case N times; the rates then count runs, and the report says which cases are flaky.
 
 This resets the business tables of the database in DATABASE_URL, as ``make seed`` does.
 """
@@ -174,7 +175,19 @@ def summarize(cases: list[AgentCase], outcomes: list[tuple[RunRecord, CaseResult
         "dropped_citations": sum(t.dropped_citations for t in turns),
         "model_calls_per_case": round(statistics.mean(per_case_calls), 2) if turns else None,
         "tokens_per_case": round(statistics.mean(per_case_tokens)) if turns else None,
+        "stability": stability(cases, outcomes),
     }
+
+
+def stability(cases: list[AgentCase], outcomes: list[tuple[RunRecord, CaseResult]]) -> dict:
+    """How many runs of each case passed, and how many cases passed every run, some or none."""
+    passes: dict[str, list[bool]] = defaultdict(list)
+    for case, (_, result) in zip(cases, outcomes, strict=True):
+        passes[case.id].append(result.passed)
+    every = [i for i, flags in passes.items() if all(flags)]
+    none = [i for i, flags in passes.items() if not any(flags)]
+    flaky = {i: f"{sum(f)}/{len(f)}" for i, f in passes.items() if any(f) and not all(f)}
+    return {"every_run": len(every), "no_run": len(none), "flaky": flaky, "cases": len(passes)}
 
 
 def _percent(entry: dict) -> str:
@@ -197,6 +210,14 @@ def print_report(summary: dict, cases: list[AgentCase], outcomes: list) -> None:
     print(f"Cited but not retrieved {summary['dropped_citations']}")
     print(f"Model calls per case    {summary['model_calls_per_case']}")
     print(f"Tokens per case         {summary['tokens_per_case']}")
+    steady = summary["stability"]
+    if len(cases) > steady["cases"]:  # some case was run more than once
+        print(
+            f"\nPassed every run: {steady['every_run']}/{steady['cases']} cases, "
+            f"no run: {steady['no_run']}"
+        )
+        for case_id, rate in steady["flaky"].items():
+            print(f"  flaky {case_id} {rate}")
     failed = [(c, r) for c, (_, r) in zip(cases, outcomes, strict=True) if not r.passed]
     if failed:
         print("\nFailed cases")
@@ -206,10 +227,11 @@ def print_report(summary: dict, cases: list[AgentCase], outcomes: list) -> None:
                 print(f"      {problem}")
 
 
-async def main(split: str, only: list[str] | None) -> None:
+async def main(split: str, only: list[str] | None, repeat: int) -> None:
     cases = load_cases(split)
     if only:
         cases = [c for c in cases if c.id in only]
+    cases = [case for case in cases for _ in range(repeat)]  # a case's runs sit together
     deps = AgentDeps(sessions=SessionLocal, llm=OpenAIClient(), embedder=OpenAIEmbedder())
     outcomes = []
     try:
@@ -244,5 +266,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--split", choices=("dev", "test"), default="dev")
     parser.add_argument("--only", nargs="+", help="run just these case ids")
+    parser.add_argument("--repeat", type=int, default=1, help="runs of each case (default 1)")
     arguments = parser.parse_args()
-    asyncio.run(main(arguments.split, arguments.only))
+    if arguments.repeat < 1:
+        parser.error("--repeat must be at least 1")
+    asyncio.run(main(arguments.split, arguments.only, arguments.repeat))

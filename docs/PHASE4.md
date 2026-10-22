@@ -148,7 +148,7 @@ Every row has the same fourteen fields (`evals/agent_cases.py` validates them, r
 
 **Metrics:** pass rate overall and per category; tool-call accuracy (name and arguments match, no forbidden tool); trap pass rate per trap; refund outcome correct; citations that match retrieved documents; the count of cited ids that were never retrieved; model calls and tokens per case. The output goes to `evals/results/` like the retrieval eval.
 
-**Dev and test.** The dev file is for tuning the prompt and the loop. The test file is held out and run once with `--split test`. A model gives different answers on each run: in the dev runs below, single cases flipped between pass and fail with no prompt change. The runner has no `--repeat N` yet, so the baseline is one run of each case; a three-run pass rate on dev is still to do. Judged answer quality, cost and latency tables, and the reranker ablation belong to phase 6.
+**Dev and test.** The dev file is for tuning the prompt and the loop. The test file is held out and run once with `--split test`. A model gives different answers on each run: in the dev runs below, single cases flipped between pass and fail with no prompt change. `--repeat N` plays each case N times and lists the flaky ones. The baseline below is one run of each case; a three-run pass rate on dev is still to do. Judged answer quality, cost and latency tables, and the reranker ablation belong to phase 6.
 
 ## Tests
 
