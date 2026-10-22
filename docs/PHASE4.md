@@ -68,7 +68,7 @@ class LLMClient(Protocol):
     ) -> AsyncIterator[LLMEvent]: ...
 ```
 
-A client signals a provider failure by raising `LLMError`, the only error the loop catches: it ends the turn with an `error` event and keeps the saved question, while any other exception is a bug and surfaces. `LLMEvent` is a text delta, a finished tool call, or the end of the reply with its token usage. The OpenAI implementation uses the Chat Completions API with `tools`; the fake returns a scripted list of events, which is how the loop's tests run. The loop is split into small functions (call the model, run one tool, save a message) so phase 6 can wrap each in a trace span without restructuring it.
+A client signals a provider failure by raising `LLMError`, the only error the loop catches: it ends the turn with an `error` event and keeps the saved question, while any other exception is a bug and surfaces. `LLMEvent` is a text delta, a finished tool call, or the end of the reply with its token usage, and a reply's events come in the order the model produced them. The OpenAI implementation uses the Responses API with function tools (`openai_client.py`); the fake (`tests/scripted_llm.py`) returns a scripted list of events, which is how the loop's tests run. The loop is split into small functions (call the model, run one tool, save a message) so phase 6 can wrap each in a trace span without restructuring it.
 
 ## Knowledge, citations and escalation
 

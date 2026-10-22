@@ -53,6 +53,7 @@ class LLMClient(Protocol):
     def stream(
         self, system: str, messages: Sequence[MessageContent], tools: Sequence[ToolSchema]
     ) -> AsyncIterator[LLMEvent]:
-        """Stream one reply: text deltas as they arrive, then each finished tool call, then
-        ``Done``. ``system`` is the system prompt and ``messages`` the conversation so far."""
+        """Stream one reply: text deltas as they arrive and each finished tool call, in the order
+        the model produced them, then ``Done``. ``system`` is the system prompt and ``messages``
+        the conversation so far."""
         ...

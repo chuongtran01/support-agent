@@ -69,7 +69,7 @@ async def test_text_arrives_piece_by_piece_then_done_with_usage():
     assert events == [TextDelta("Hel"), TextDelta("lo"), Done(Usage(120, 4))]
 
 
-async def test_calls_come_out_in_order_and_after_the_text():
+async def test_text_and_calls_come_out_in_the_order_they_were_streamed():
     events = await collect(
         events_from_responses(
             stream_of(
@@ -80,8 +80,8 @@ async def test_calls_come_out_in_order_and_after_the_text():
         )
     )
     assert events == [
-        TextDelta("One moment."),
         ToolCall("call_a", "lookup_order", '{"order_id": 1}'),
+        TextDelta("One moment."),
         ToolCall("call_b", "escalate", '{"reason": "x"}'),
         Done(),
     ]

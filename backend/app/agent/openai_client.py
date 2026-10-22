@@ -80,18 +80,17 @@ async def events_from_responses(
 ) -> AsyncIterator[LLMEvent]:
     """Turn Responses API stream events into ``LLMEvent``s.
 
-    Text is sent as it arrives. A function call is whole by the time the API reports its item
-    done, but is held back until the stream ends, so the loop sees the text first and then
-    every call in the order the model made them. A failed response raises ``LLMError``.
+    Text is sent as it arrives, and a function call as soon as the API reports its item done
+    (it is whole by then), so events come in the order the model produced them. A failed
+    response raises ``LLMError``.
     """
-    calls: list[ToolCall] = []
     usage = Usage()
     async for event in stream:
         match event:
             case ResponseTextDeltaEvent(delta=text) if text:
                 yield TextDelta(text)
             case ResponseOutputItemDoneEvent(item=ResponseFunctionToolCall() as item):
-                calls.append(ToolCall(item.call_id, item.name, item.arguments))
+                yield ToolCall(item.call_id, item.name, item.arguments)
             case (
                 ResponseCompletedEvent(response=response)
                 | ResponseIncompleteEvent(response=response)
@@ -103,8 +102,6 @@ async def events_from_responses(
                 raise LLMError(error.message if error else "the response failed")
             case ResponseErrorEvent(message=message):
                 raise LLMError(message)
-    for call in calls:
-        yield call
     yield Done(usage)
 
 
