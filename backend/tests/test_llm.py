@@ -1,6 +1,18 @@
-from types import SimpleNamespace as NS
-
 import pytest
+from openai.types.responses import (
+    Response,
+    ResponseCompletedEvent,
+    ResponseError,
+    ResponseErrorEvent,
+    ResponseFailedEvent,
+    ResponseFunctionToolCall,
+    ResponseIncompleteEvent,
+    ResponseOutputItemDoneEvent,
+    ResponseOutputMessage,
+    ResponseReasoningItem,
+    ResponseTextDeltaEvent,
+    ResponseUsage,
+)
 
 from app.agent.llm import (
     Done,
@@ -25,23 +37,25 @@ from app.agent.messages import (
 )
 from app.tools.registry import ToolSchema
 
+# The SDK's events have many required fields; ``model_construct`` fills in only what is read
+
 
 def text_event(text):
-    return NS(type="response.output_text.delta", delta=text)
+    return ResponseTextDeltaEvent.model_construct(delta=text)
 
 
 def call_event(call_id, name, arguments):
-    item = NS(type="function_call", call_id=call_id, name=name, arguments=arguments)
-    return NS(type="response.output_item.done", item=item)
+    item = ResponseFunctionToolCall.model_construct(call_id=call_id, name=name, arguments=arguments)
+    return ResponseOutputItemDoneEvent.model_construct(item=item)
 
 
-def other_item_event(kind):
-    return NS(type="response.output_item.done", item=NS(type=kind))
+def other_item_event(item_type):
+    return ResponseOutputItemDoneEvent.model_construct(item=item_type.model_construct())
 
 
-def completed_event(prompt, completion, kind="response.completed"):
-    usage = NS(input_tokens=prompt, output_tokens=completion)
-    return NS(type=kind, response=NS(usage=usage))
+def completed_event(prompt, completion, event_type=ResponseCompletedEvent):
+    usage = ResponseUsage.model_construct(input_tokens=prompt, output_tokens=completion)
+    return event_type.model_construct(response=Response.model_construct(usage=usage))
 
 
 async def stream_of(*events):
@@ -82,27 +96,36 @@ async def test_calls_come_out_in_order_and_after_the_text():
 
 async def test_reasoning_and_message_items_are_not_calls():
     events = await collect(
-        events_from_responses(stream_of(other_item_event("reasoning"), other_item_event("message")))
+        events_from_responses(
+            stream_of(
+                other_item_event(ResponseReasoningItem), other_item_event(ResponseOutputMessage)
+            )
+        )
     )
     assert events == [Done()]
 
 
 async def test_an_incomplete_response_still_reports_its_usage():
     events = await collect(
-        events_from_responses(stream_of(completed_event(50, 900, "response.incomplete")))
+        events_from_responses(stream_of(completed_event(50, 900, ResponseIncompleteEvent)))
     )
     assert events == [Done(Usage(50, 900))]
 
 
 async def test_a_failed_response_raises_llm_error():
-    failed = NS(type="response.failed", response=NS(error=NS(message="server_error")))
+    error = ResponseError.model_construct(message="server_error")
+    failed = ResponseFailedEvent.model_construct(response=Response.model_construct(error=error))
     with pytest.raises(LLMError, match="server_error"):
         await collect(events_from_responses(stream_of(text_event("Hi"), failed)))
 
 
 async def test_an_error_event_raises_llm_error():
     with pytest.raises(LLMError, match="bad request"):
-        await collect(events_from_responses(stream_of(NS(type="error", message="bad request"))))
+        await collect(
+            events_from_responses(
+                stream_of(ResponseErrorEvent.model_construct(message="bad request"))
+            )
+        )
 
 
 def test_tool_schemas_become_responses_api_tools():

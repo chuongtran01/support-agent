@@ -10,6 +10,18 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from openai import AsyncOpenAI, OpenAIError
+from openai.types.responses import (
+    FunctionToolParam,
+    ResponseCompletedEvent,
+    ResponseErrorEvent,
+    ResponseFailedEvent,
+    ResponseFunctionToolCall,
+    ResponseIncompleteEvent,
+    ResponseInputParam,
+    ResponseOutputItemDoneEvent,
+    ResponseStreamEvent,
+    ResponseTextDeltaEvent,
+)
 
 from app.agent.messages import AssistantContent, MessageContent, ToolContent, UserContent
 from app.config import settings
@@ -60,7 +72,7 @@ class LLMClient(Protocol):
         ...
 
 
-def to_responses_tools(tools: list[ToolSchema]) -> list[dict]:
+def to_responses_tools(tools: Sequence[ToolSchema]) -> list[FunctionToolParam]:
     """The tools in the shape the Responses API takes."""
     return [
         {
@@ -73,7 +85,7 @@ def to_responses_tools(tools: list[ToolSchema]) -> list[dict]:
     ]
 
 
-def to_responses_input(messages: Sequence[MessageContent]) -> list[dict]:
+def to_responses_input(messages: Sequence[MessageContent]) -> ResponseInputParam:
     """The conversation as Responses API input items.
 
     An assistant message becomes its text (if any) and one ``function_call`` item per tool
@@ -81,7 +93,7 @@ def to_responses_input(messages: Sequence[MessageContent]) -> list[dict]:
     model did on an earlier step is not sent back: the API accepts a conversation without it,
     and it is not stored.
     """
-    items: list[dict] = []
+    items: ResponseInputParam = []
     for message in messages:
         match message:
             case UserContent():
@@ -109,7 +121,9 @@ def to_responses_input(messages: Sequence[MessageContent]) -> list[dict]:
     return items
 
 
-async def events_from_responses(stream: AsyncIterator[Any]) -> AsyncIterator[LLMEvent]:
+async def events_from_responses(
+    stream: AsyncIterator[ResponseStreamEvent],
+) -> AsyncIterator[LLMEvent]:
     """Turn Responses API stream events into ``LLMEvent``s.
 
     Text is sent as it arrives. A function call is whole by the time the API reports its item
@@ -119,23 +133,22 @@ async def events_from_responses(stream: AsyncIterator[Any]) -> AsyncIterator[LLM
     calls: list[ToolCall] = []
     usage = Usage()
     async for event in stream:
-        match event.type:
-            case "response.output_text.delta":
-                if event.delta:
-                    yield TextDelta(event.delta)
-            case "response.output_item.done" if event.item.type == "function_call":
-                item = event.item
+        match event:
+            case ResponseTextDeltaEvent(delta=text) if text:
+                yield TextDelta(text)
+            case ResponseOutputItemDoneEvent(item=ResponseFunctionToolCall() as item):
                 calls.append(ToolCall(item.call_id, item.name, item.arguments))
-            case "response.completed" | "response.incomplete":
-                if event.response.usage:
-                    usage = Usage(
-                        event.response.usage.input_tokens, event.response.usage.output_tokens
-                    )
-            case "response.failed":
-                error = event.response.error
+            case (
+                ResponseCompletedEvent(response=response)
+                | ResponseIncompleteEvent(response=response)
+            ):
+                if response.usage:
+                    usage = Usage(response.usage.input_tokens, response.usage.output_tokens)
+            case ResponseFailedEvent(response=response):
+                error = response.error
                 raise LLMError(error.message if error else "the response failed")
-            case "error":
-                raise LLMError(event.message)
+            case ResponseErrorEvent(message=message):
+                raise LLMError(message)
     for call in calls:
         yield call
     yield Done(usage)
