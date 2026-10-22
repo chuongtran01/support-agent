@@ -22,6 +22,7 @@ This is the first phase that needs an `OPENAI_API_KEY` to run the agent. Everyth
 - [x] **API**: `backend/app/api/`. Chat sessions, the streaming message endpoint, and the approver endpoints
 - [x] **Agent eval runner**: `evals/agent_eval.py` and the pure checks in `evals/agent_checks.py` (`make eval-agent`). Runs each case against freshly seeded data and reports pass rates
 - [x] **Repeat runs**: `--repeat N` plays each case N times; the results file has one entry per run with its run number, and the report lists the flaky cases (passed some runs, not all)
+- [ ] **Responses API**: move `OpenAIClient` (and the stream-to-event conversion) from Chat Completions to `/v1/responses`, so `gpt-6-luna` can use function tools with reasoning on. The `LLMClient` events and the loop stay the same; stored history is converted to the Responses format (carrying reasoning items between steps), reasoning effort becomes a real setting (low, medium, high), and the dev and test baselines are re-run and compared with the reasoning-off numbers below
 - [ ] **Tests**: `backend/tests/`. Login, scoping of every endpoint, the loop with a fake model, streaming, and approver rules; none needs an API key
 
 ## Architecture
