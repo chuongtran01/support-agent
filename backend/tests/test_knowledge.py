@@ -133,8 +133,8 @@ async def test_a_context_without_an_embedder_is_a_programming_error():
 
 
 def test_the_model_sends_only_a_query():
-    schema = next(s for s in tool_schemas() if s["function"]["name"] == "search_knowledge")
-    parameters = schema["function"]["parameters"]
+    schema = next(s for s in tool_schemas() if s.name == "search_knowledge")
+    parameters = schema.parameters
     assert list(parameters["properties"]) == ["query"]
     assert parameters["required"] == ["query"]
     assert parameters["additionalProperties"] is False

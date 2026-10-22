@@ -1,7 +1,7 @@
 """The model behind one small interface.
 
 The loop talks to ``LLMClient`` and sees three kinds of event, whatever the provider. The
-OpenAI client turns Chat Completions chunks into those events; ``ScriptedLLM`` plays back a
+OpenAI client calls the Responses API and turns its stream into those events; ``ScriptedLLM`` plays back a
 fixed script, which is how the loop is tested with no API key.
 """
 
@@ -11,7 +11,9 @@ from typing import Any, Protocol
 
 from openai import AsyncOpenAI, OpenAIError
 
+from app.agent.messages import AssistantContent, MessageContent, ToolContent, UserContent
 from app.config import settings
+from app.tools.registry import ToolSchema
 
 
 @dataclass(frozen=True)
@@ -50,46 +52,92 @@ class LLMError(Exception):
 
 
 class LLMClient(Protocol):
-    def stream(self, messages: list[dict], tools: list[dict]) -> AsyncIterator[LLMEvent]:
+    def stream(
+        self, system: str, messages: Sequence[MessageContent], tools: Sequence[ToolSchema]
+    ) -> AsyncIterator[LLMEvent]:
         """Stream one reply: text deltas as they arrive, then each finished tool call, then
-        ``Done``. ``messages`` includes the system message."""
+        ``Done``. ``system`` is the system prompt and ``messages`` the conversation so far."""
         ...
 
 
-class _PendingCall:
-    """A tool call being assembled from pieces."""
+def to_responses_tools(tools: list[ToolSchema]) -> list[dict]:
+    """The tools in the shape the Responses API takes."""
+    return [
+        {
+            "type": "function",
+            "name": tool.name,
+            "description": tool.description,
+            "parameters": tool.parameters,
+        }
+        for tool in tools
+    ]
 
-    def __init__(self) -> None:
-        self.id = ""
-        self.name = ""
-        self.arguments = ""
 
+def to_responses_input(messages: Sequence[MessageContent]) -> list[dict]:
+    """The conversation as Responses API input items.
 
-async def events_from_chunks(chunks: AsyncIterator[Any]) -> AsyncIterator[LLMEvent]:
-    """Turn Chat Completions stream chunks into events.
-
-    A tool call arrives in pieces keyed by ``index``: the id and name first, then the
-    arguments a few characters at a time. They are held back until the stream ends, so the
-    loop only ever sees whole calls, in the order the model made them.
+    An assistant message becomes its text (if any) and one ``function_call`` item per tool
+    call, and a tool message becomes the matching ``function_call_output``. The reasoning the
+    model did on an earlier step is not sent back: the API accepts a conversation without it,
+    and it is not stored.
     """
-    pending: dict[int, _PendingCall] = {}
+    items: list[dict] = []
+    for message in messages:
+        match message:
+            case UserContent():
+                items.append({"role": "user", "content": message.content})
+            case AssistantContent():
+                if message.content:
+                    items.append({"role": "assistant", "content": message.content})
+                for call in message.tool_calls:
+                    items.append(
+                        {
+                            "type": "function_call",
+                            "call_id": call.id,
+                            "name": call.function.name,
+                            "arguments": call.function.arguments,
+                        }
+                    )
+            case ToolContent():
+                items.append(
+                    {
+                        "type": "function_call_output",
+                        "call_id": message.tool_call_id,
+                        "output": message.content,
+                    }
+                )
+    return items
+
+
+async def events_from_responses(stream: AsyncIterator[Any]) -> AsyncIterator[LLMEvent]:
+    """Turn Responses API stream events into ``LLMEvent``s.
+
+    Text is sent as it arrives. A function call is whole by the time the API reports its item
+    done, but is held back until the stream ends, so the loop sees the text first and then
+    every call in the order the model made them. A failed response raises ``LLMError``.
+    """
+    calls: list[ToolCall] = []
     usage = Usage()
-    async for chunk in chunks:
-        if getattr(chunk, "usage", None):
-            usage = Usage(chunk.usage.prompt_tokens, chunk.usage.completion_tokens)
-        for choice in chunk.choices:
-            delta = choice.delta
-            if delta.content:
-                yield TextDelta(delta.content)
-            for piece in delta.tool_calls or []:
-                call = pending.setdefault(piece.index, _PendingCall())
-                call.id = piece.id or call.id
-                if piece.function:
-                    call.name = piece.function.name or call.name
-                    call.arguments += piece.function.arguments or ""
-    for index in sorted(pending):
-        call = pending[index]
-        yield ToolCall(call.id, call.name, call.arguments)
+    async for event in stream:
+        match event.type:
+            case "response.output_text.delta":
+                if event.delta:
+                    yield TextDelta(event.delta)
+            case "response.output_item.done" if event.item.type == "function_call":
+                item = event.item
+                calls.append(ToolCall(item.call_id, item.name, item.arguments))
+            case "response.completed" | "response.incomplete":
+                if event.response.usage:
+                    usage = Usage(
+                        event.response.usage.input_tokens, event.response.usage.output_tokens
+                    )
+            case "response.failed":
+                error = event.response.error
+                raise LLMError(error.message if error else "the response failed")
+            case "error":
+                raise LLMError(event.message)
+    for call in calls:
+        yield call
     yield Done(usage)
 
 
@@ -101,17 +149,20 @@ class OpenAIClient:
         self._client = AsyncOpenAI(api_key=api_key)
         self._model = model or settings.agent_model
 
-    async def stream(self, messages: list[dict], tools: list[dict]) -> AsyncIterator[LLMEvent]:
+    async def stream(
+        self, system: str, messages: Sequence[MessageContent], tools: Sequence[ToolSchema]
+    ) -> AsyncIterator[LLMEvent]:
         try:
-            chunks = await self._client.chat.completions.create(
+            stream = await self._client.responses.create(
                 model=self._model,
-                messages=messages,
-                tools=tools,
-                reasoning_effort=settings.agent_reasoning_effort,
+                instructions=system,
+                input=to_responses_input(messages),
+                tools=to_responses_tools(tools),
+                reasoning={"effort": settings.agent_reasoning_effort},
+                store=False,  # the conversation lives in our database, not OpenAI's
                 stream=True,
-                stream_options={"include_usage": True},
             )
-            async for event in events_from_chunks(chunks):
+            async for event in events_from_responses(stream):
                 yield event
         except OpenAIError as error:
             raise LLMError(str(error)) from error
@@ -128,8 +179,10 @@ class ScriptedLLM:
         self._replies = [list(reply) for reply in replies]
         self.calls: list[dict[str, Any]] = []
 
-    async def stream(self, messages: list[dict], tools: list[dict]) -> AsyncIterator[LLMEvent]:
-        self.calls.append({"messages": list(messages), "tools": tools})
+    async def stream(
+        self, system: str, messages: Sequence[MessageContent], tools: Sequence[ToolSchema]
+    ) -> AsyncIterator[LLMEvent]:
+        self.calls.append({"system": system, "messages": list(messages), "tools": list(tools)})
         if len(self.calls) > len(self._replies):
             raise AssertionError("the script has no reply for this model call")
         reply = self._replies[len(self.calls) - 1]

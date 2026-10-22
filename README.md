@@ -45,7 +45,7 @@ cd backend
 
 Log in with `POST /auth/login` (for example `alex@example.com` and the seed password), then send the token as `Authorization: Bearer ...`. A message is `POST /sessions/{id}/messages` and the answer streams back as server-sent events (`curl -N` shows them). The agent needs `OPENAI_API_KEY` and the knowledge base loaded (next section).
 
-The agent model is `AGENT_MODEL` (default `gpt-6-luna`). That model only accepts function tools on Chat Completions with reasoning turned off, so `AGENT_REASONING_EFFORT` defaults to `none`; change both together if you switch models.
+The agent calls the OpenAI Responses API with the model in `AGENT_MODEL` (default `gpt-6-luna`) and the reasoning level in `AGENT_REASONING_EFFORT` (`none`, `low`, `medium` or `high`; default `medium`).
 
 ## Load the knowledge base
 

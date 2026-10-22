@@ -11,7 +11,6 @@ import uuid
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
 
 from app.agent import store
 from app.agent.citations import add_retrieved, check_citations
@@ -20,6 +19,7 @@ from app.agent.llm import Done, LLMClient, LLMError, TextDelta, ToolCall, Usage
 from app.agent.messages import (
     AssistantContent,
     FunctionCall,
+    MessageContent,
     StoredToolCall,
     ToolContent,
     UserContent,
@@ -65,13 +65,13 @@ class _Reply:
 
 
 async def _model_step(
-    deps: AgentDeps, messages: list[dict[str, Any]]
+    deps: AgentDeps, system: str, history: list[MessageContent]
 ) -> AsyncIterator[TextEvent | _Reply]:
     """Call the model once. Text goes out as it arrives; the whole reply comes last."""
     text: list[str] = []
     calls: list[ToolCall] = []
     usage = Usage()
-    async for event in deps.llm.stream(messages, TOOL_SCHEMAS):
+    async for event in deps.llm.stream(system, history, TOOL_SCHEMAS):
         if isinstance(event, TextDelta):
             text.append(event.text)
             yield TextEvent(event.text)
@@ -126,13 +126,10 @@ async def run_turn(
     """Handle one customer message. Raises ``SessionNotFound`` before doing anything else if
     the session is not this customer's."""
     stored = await store.load_history(deps.sessions, session_id, customer.id)
-    system = {
-        "role": "system",
-        "content": build_system_prompt(customer.name, customer.membership, deps.clock().date()),
-    }
+    system = build_system_prompt(customer.name, customer.membership, deps.clock().date())
     question = UserContent(content=text)
     await store.save_message(deps.sessions, session_id, question)
-    history = [*store.to_openai(stored), question.as_openai()]
+    history = [*store.to_messages(stored), question]
 
     retrieved: dict[str, Citation] = {}
     calls_made: list[str] = []  # "name: status", for the ticket if the agent runs out of steps
@@ -142,7 +139,7 @@ async def run_turn(
     for _ in range(deps.max_steps):
         reply: _Reply | None = None
         try:
-            async for item in _model_step(deps, [system, *history]):
+            async for item in _model_step(deps, system, history):
                 if isinstance(item, _Reply):
                     reply = item
                 else:
@@ -172,7 +169,7 @@ async def run_turn(
         # stored conversation can always be replayed to the model
         assistant = _assistant_content(reply)
         await store.save_message(deps.sessions, session_id, assistant)
-        history.append(assistant.as_openai())
+        history.append(assistant)
         for call in reply.tool_calls:
             yield ToolEvent(call.name, "started")
             output = await _run_tool(deps, customer, call)
@@ -183,7 +180,7 @@ async def run_turn(
                 add_retrieved(retrieved, output.text)
             outcome = ToolContent(tool_call_id=call.id, content=output.text)
             await store.save_message(deps.sessions, session_id, outcome)
-            history.append(outcome.as_openai())
+            history.append(outcome)
             yield ToolEvent(call.name, "finished", output.status)
 
     # The model is out of steps, but its tools may have changed things in the last round.

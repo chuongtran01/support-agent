@@ -34,7 +34,7 @@ async def call(ctx, name, **arguments) -> dict:
 
 
 def test_the_agent_gets_five_tools_and_not_decide_refund():
-    names = [schema["function"]["name"] for schema in tool_schemas()]
+    names = [schema.name for schema in tool_schemas()]
     assert names == [
         "search_knowledge",
         "lookup_order",
@@ -46,13 +46,13 @@ def test_the_agent_gets_five_tools_and_not_decide_refund():
 
 def test_no_tool_accepts_a_customer_or_an_amount():
     for schema in tool_schemas():
-        parameters = schema["function"]["parameters"]
+        parameters = schema.parameters
         assert parameters["additionalProperties"] is False
         assert not {"customer_id", "amount_cents", "amount"} & set(parameters["properties"])
 
 
 def test_issue_refund_schema_lists_the_reason_codes_and_requires_every_argument():
-    parameters = tool_schemas()[2]["function"]["parameters"]
+    parameters = tool_schemas()[2].parameters
     assert parameters["required"] == ["order_item_id", "quantity", "reason_code"]
     assert parameters["properties"]["reason_code"]["enum"] == list(ReasonCode.__args__)
     assert parameters["properties"]["quantity"]["minimum"] == 1

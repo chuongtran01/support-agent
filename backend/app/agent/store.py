@@ -9,7 +9,7 @@ import json
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Literal
+from typing import Literal
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -184,19 +184,19 @@ async def load_history(
         return [StoredMessage(m.id, m.role, parse_content(m.role, m.content)) for m in rows]
 
 
-def to_openai(stored: list[StoredMessage]) -> list[dict[str, Any]]:
-    """The stored messages as the model expects them, with the system prompt left to the caller.
+def to_messages(stored: list[StoredMessage]) -> list[MessageContent]:
+    """The stored messages to replay to the model, with the system prompt left to the caller.
 
     The model rejects a conversation where a tool call has no result. That can happen if the
     server stopped between running a tool and saving its result, so a call without a result
     gets a stand-in, and a result with no call is dropped.
     """
-    messages: list[dict[str, Any]] = []
+    messages: list[MessageContent] = []
     waiting: list[str] = []  # ids of tool calls that have no result yet
 
     def settle() -> None:
         for call_id in waiting:
-            messages.append(ToolContent(tool_call_id=call_id, content=LOST_RESULT).as_openai())
+            messages.append(ToolContent(tool_call_id=call_id, content=LOST_RESULT))
         waiting.clear()
 
     for message in stored:
@@ -207,7 +207,7 @@ def to_openai(stored: list[StoredMessage]) -> list[dict[str, Any]]:
             waiting.remove(content.tool_call_id)
         else:
             settle()
-        messages.append(content.as_openai())
+        messages.append(content)
         if isinstance(content, AssistantContent):
             waiting.extend(call.id for call in content.tool_calls)
     settle()

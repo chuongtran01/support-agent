@@ -159,8 +159,8 @@ async def test_the_next_message_in_a_chat_sees_the_earlier_ones(api):
     session_id = await api.new_chat()
     await api.send(session_id, "one")
     await api.send(session_id, "two")
-    roles = [m["role"] for m in api.llm.calls[1]["messages"]]
-    assert roles == ["system", "user", "assistant", "user"]
+    roles = [m.role for m in api.llm.calls[1]["messages"]]
+    assert roles == ["user", "assistant", "user"]
 
 
 async def test_citations_in_the_done_event_match_what_was_retrieved(api, monkeypatch):
@@ -414,9 +414,9 @@ class Gate(ScriptedLLM):
         super().__init__(replies)
         self.open = asyncio.Event()
 
-    async def stream(self, messages, tools):
+    async def stream(self, system, messages, tools):
         await self.open.wait()
-        async for event in super().stream(messages, tools):
+        async for event in super().stream(system, messages, tools):
             yield event
 
 
@@ -457,7 +457,7 @@ async def test_a_turn_finishes_and_saves_even_if_nobody_reads_it(api):
 
 async def test_a_model_outage_is_an_error_event_and_the_chat_stays_usable(api):
     class Down:
-        async def stream(self, messages, tools):
+        async def stream(self, system, messages, tools):
             raise LLMError("rate limited")
             yield
 
@@ -471,7 +471,7 @@ async def test_a_model_outage_is_an_error_event_and_the_chat_stays_usable(api):
 
 async def test_a_bug_in_a_turn_is_an_error_event_not_a_hung_stream(api):
     class Broken:
-        async def stream(self, messages, tools):
+        async def stream(self, system, messages, tools):
             raise ZeroDivisionError
             yield
 

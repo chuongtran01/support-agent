@@ -1,7 +1,7 @@
 """The content of a stored chat message.
 
 ``chat_messages.content`` holds everything about a message except its role, in the shape of
-the OpenAI message (``as_json``), so a stored message is replayed to the model as it was.
+a chat message (``as_json``), so a stored message is replayed to the model as it was.
 The models reject unknown fields, so a row that does not match is an error when it is loaded.
 """
 
@@ -17,9 +17,6 @@ class _Content(BaseModel):
 
     def as_json(self) -> dict[str, Any]:
         return self.model_dump(mode="json")
-
-    def as_openai(self) -> dict[str, Any]:
-        return {"role": self.role, **self.as_json()}
 
 
 class UserContent(_Content):

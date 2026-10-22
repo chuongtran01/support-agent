@@ -130,11 +130,10 @@ async def test_the_model_gets_the_system_prompt_the_history_and_all_the_tools(wo
     llm = ScriptedLLM([say("ok")])
     await world.turn(llm, "hi")
     sent = llm.calls[0]
-    assert sent["messages"][0]["role"] == "system"
-    assert "Alex Rivera" in sent["messages"][0]["content"]
-    assert "Basic membership" in sent["messages"][0]["content"]
-    assert sent["messages"][1:] == [{"role": "user", "content": "hi"}]
-    assert [t["function"]["name"] for t in sent["tools"]] == [
+    assert "Alex Rivera" in sent["system"]
+    assert "Basic membership" in sent["system"]
+    assert sent["messages"] == [UserContent(content="hi")]
+    assert [t.name for t in sent["tools"]] == [
         "search_knowledge",
         "lookup_order",
         "issue_refund",
@@ -193,8 +192,8 @@ async def test_a_tool_call_is_run_saved_and_fed_back_to_the_model(world):
     assert json.loads(stored[2].content.content)["order"]["id"] == order_id
 
     second = llm.calls[1]["messages"]
-    assert [m["role"] for m in second] == ["system", "user", "assistant", "tool"]
-    assert second[3]["tool_call_id"] == "c1"
+    assert [m.role for m in second] == ["user", "assistant", "tool"]
+    assert second[2].tool_call_id == "c1"
 
 
 async def test_several_tool_calls_in_one_reply_run_in_order(world):
@@ -373,8 +372,8 @@ async def test_the_next_turn_sees_everything_said_before(world):
     session_id, _ = await world.turn(first, "look up my order")
     second = ScriptedLLM([say("Anything else?")])
     await world.turn(second, "thanks", session_id=session_id)
-    roles = [m["role"] for m in second.calls[0]["messages"]]
-    assert roles == ["system", "user", "assistant", "tool", "assistant", "user"]
+    roles = [m.role for m in second.calls[0]["messages"]]
+    assert roles == ["user", "assistant", "tool", "assistant", "user"]
 
 
 async def test_a_session_that_is_not_the_customers_is_refused_and_untouched(world):
@@ -390,9 +389,9 @@ async def test_no_database_connection_is_held_while_the_model_is_called(world):
     in_use = []
 
     class Probe(ScriptedLLM):
-        async def stream(self, messages, tools):
+        async def stream(self, system, messages, tools):
             in_use.append(world.engine.sync_engine.pool.checkedout())
-            async for event in super().stream(messages, tools):
+            async for event in super().stream(system, messages, tools):
                 yield event
 
     lookup = call("c1", "lookup_order", order_id=world.order_id("alex-5d"))
@@ -427,7 +426,7 @@ async def test_the_step_limit_opens_a_ticket_from_code_and_tells_the_customer(wo
 
 async def test_a_model_failure_ends_the_turn_with_an_error_and_keeps_the_question(world):
     class Down:
-        async def stream(self, messages, tools):
+        async def stream(self, system, messages, tools):
             raise LLMError("rate limited")
             yield
 
@@ -439,7 +438,7 @@ async def test_a_model_failure_ends_the_turn_with_an_error_and_keeps_the_questio
 
 async def test_a_failure_after_some_text_still_ends_with_an_error(world):
     class Breaks:
-        async def stream(self, messages, tools):
+        async def stream(self, system, messages, tools):
             yield TextDelta("Let me")
             raise LLMError("connection dropped")
 
@@ -450,7 +449,7 @@ async def test_a_failure_after_some_text_still_ends_with_an_error(world):
 
 async def test_a_bug_in_the_client_is_not_swallowed(world):
     class Broken:
-        async def stream(self, messages, tools):
+        async def stream(self, system, messages, tools):
             raise ZeroDivisionError
             yield
 
@@ -490,29 +489,29 @@ def result(call_id):
 
 
 def test_a_complete_conversation_is_replayed_as_it_was_saved():
-    messages = store.to_openai(
+    messages = store.to_messages(
         stored(user("hi"), assistant_calling("a"), result("a"), AssistantContent(content="yes"))
     )
-    assert [m["role"] for m in messages] == ["user", "assistant", "tool", "assistant"]
-    assert messages[0] == {"role": "user", "content": "hi"}
-    assert messages[3] == {"role": "assistant", "content": "yes"}
+    assert [m.role for m in messages] == ["user", "assistant", "tool", "assistant"]
+    assert messages[0] == user("hi")
+    assert messages[3] == AssistantContent(content="yes")
 
 
 def test_a_tool_call_whose_result_was_lost_gets_a_stand_in():
-    messages = store.to_openai(stored(user("hi"), assistant_calling("a", "b"), result("a")))
-    assert [m["role"] for m in messages] == ["user", "assistant", "tool", "tool"]
-    assert messages[3]["tool_call_id"] == "b"
-    assert "did not finish" in messages[3]["content"]
+    messages = store.to_messages(stored(user("hi"), assistant_calling("a", "b"), result("a")))
+    assert [m.role for m in messages] == ["user", "assistant", "tool", "tool"]
+    assert messages[3].tool_call_id == "b"
+    assert "did not finish" in messages[3].content
 
 
 def test_a_lost_result_is_filled_in_before_the_next_message():
-    messages = store.to_openai(stored(assistant_calling("a"), user("hello?")))
-    assert [m["role"] for m in messages] == ["assistant", "tool", "user"]
+    messages = store.to_messages(stored(assistant_calling("a"), user("hello?")))
+    assert [m.role for m in messages] == ["assistant", "tool", "user"]
 
 
 def test_a_result_with_no_call_is_dropped():
-    messages = store.to_openai(stored(user("hi"), result("ghost")))
-    assert [m["role"] for m in messages] == ["user"]
+    messages = store.to_messages(stored(user("hi"), result("ghost")))
+    assert [m.role for m in messages] == ["user"]
 
 
 async def test_a_stored_row_that_does_not_fit_its_role_fails_when_loaded(world):

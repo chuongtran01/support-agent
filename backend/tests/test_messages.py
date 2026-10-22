@@ -38,12 +38,7 @@ def test_an_assistant_message_with_tool_calls_keeps_a_null_content():
 
 
 def test_an_empty_tool_call_list_is_left_out_because_the_api_rejects_it():
-    assert "tool_calls" not in AssistantContent(content="yes").as_openai()
-
-
-def test_as_openai_adds_the_role():
-    assert UserContent(content="hi").as_openai() == {"role": "user", "content": "hi"}
-    assert ToolContent(tool_call_id="c1", content="{}").as_openai()["role"] == "tool"
+    assert "tool_calls" not in AssistantContent(content="yes").as_json()
 
 
 @pytest.mark.parametrize(

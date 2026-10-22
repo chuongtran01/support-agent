@@ -115,17 +115,19 @@ def _clean(schema: Any) -> Any:
     return schema
 
 
-def tool_schemas(tools: dict[str, ToolSpec] = TOOLS) -> list[dict[str, Any]]:
-    """The tool list in the shape OpenAI function calling expects."""
+@dataclass(frozen=True)
+class ToolSchema:
+    """What the model is told about a tool: its name, what it does, and the JSON Schema of
+    its arguments. The model client turns this into its provider's format."""
+
+    name: str
+    description: str
+    parameters: dict[str, Any]
+
+
+def tool_schemas(tools: dict[str, ToolSpec] = TOOLS) -> list[ToolSchema]:
     return [
-        {
-            "type": "function",
-            "function": {
-                "name": spec.name,
-                "description": spec.description,
-                "parameters": _clean(spec.arguments.model_json_schema()),
-            },
-        }
+        ToolSchema(spec.name, spec.description, _clean(spec.arguments.model_json_schema()))
         for spec in tools.values()
     ]
 
