@@ -1,6 +1,6 @@
 # Phase 4: Agent loop and API
 
-**Status:** in progress (step 6 of 6 done; gate items left)
+**Status:** done
 **Gate:** trap and tool evals run
 
 ## Goal
@@ -23,7 +23,7 @@ This is the first phase that needs an `OPENAI_API_KEY` to run the agent. Everyth
 - [x] **Agent eval runner**: `evals/agent_eval.py` and the pure checks in `evals/agent_checks.py` (`make eval-agent`). Runs each case against freshly seeded data and reports pass rates
 - [x] **Repeat runs**: `--repeat N` plays each case N times; the results file has one entry per run with its run number, and the report lists the flaky cases (passed some runs, not all)
 - [x] **Responses API**: `OpenAIClient` (`openai_client.py`) calls `/v1/responses`, so `gpt-6-luna` can use function tools with reasoning on. The `LLMClient` events and the loop are unchanged; stored messages are converted to Responses input items at the client, with `store=False`. Reasoning items are not carried between steps (the API accepts a conversation without them and they are not stored). Reasoning effort is the `AGENT_REASONING_EFFORT` setting (default `medium`). The dev and test baselines were re-run and are compared with the reasoning-off numbers below
-- [ ] **Tests**: `backend/tests/`. Login, scoping of every endpoint, the loop with a fake model, streaming, and approver rules; none needs an API key
+- [x] **Tests**: `backend/tests/`. Login, scoping of every endpoint, the loop with a fake model, streaming, and approver rules; none needs an API key
 
 ## Architecture
 
@@ -179,9 +179,9 @@ None needs an API key or the network. The database tests use the same throwaway 
 
 - [x] **Evals run**: `make eval-agent` runs both splits and writes the metrics above
 - [x] **Baseline**: dev and test numbers recorded in this file (below)
-- [ ] **Scoping**: every endpoint is scoped to the token's customer; none takes a customer id
-- [ ] **Approver endpoints**: role-checked on every call, with `decide_refund` re-checking
-- [ ] **Tests**: `pytest` passes with no API key
+- [x] **Scoping**: every endpoint is scoped to the token's customer; none takes a customer id
+- [x] **Approver endpoints**: role-checked on every call, with `decide_refund` re-checking
+- [x] **Tests**: `pytest` passes with no API key
 
 ## Baseline
 
