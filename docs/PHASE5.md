@@ -1,6 +1,6 @@
 # Phase 5: Frontend
 
-**Status:** in progress (step 1 of 7 done)
+**Status:** in progress (step 2 of 7 done)
 **Gate:** full demo flow works
 
 ## Goal
@@ -12,9 +12,9 @@ The backend is not expected to change. If the UI turns out to need an endpoint, 
 ## Deliverables
 
 - [x] **App scaffold**: `frontend/`, Next.js 16 (App Router) with TypeScript, Tailwind 4 and shadcn/ui, Vitest with Testing Library, `npm` scripts for dev, build, lint, type-check and tests, and `make` targets for them (`make frontend-install`, `frontend-dev`, `frontend-build`, `frontend-check`)
-- [ ] **API client and types**: `frontend/src/api/`. A typed client for every endpoint, with the request and response types generated from the backend's OpenAPI spec (`make api-types`) so they cannot drift, and hand-written types for the stream events (OpenAPI does not describe them)
+- [x] **API client and types**: `frontend/src/api/`. A typed client for every endpoint, with the request and response types generated from the backend's OpenAPI spec (`make api-types`) so they cannot drift, and hand-written types for the stream events (OpenAPI does not describe them)
 - [ ] **Login and session**: `/login` with a one-click button per seeded demo customer and the approver, the token kept for the tab, a header with the customer's name and membership, log out, and a redirect to `/login` on any `401`
-- [ ] **Stream reader**: `fetch` with the `Authorization` header and a small server-sent-events parser, because `EventSource` cannot send headers. Pure functions, unit tested
+- [x] **Stream reader**: `fetch` with the `Authorization` header and a small server-sent-events parser, because `EventSource` cannot send headers. Pure functions, unit tested
 - [ ] **Chat page**: `/chat`. Session list, message thread and composer, the answer streaming in, a line showing which tool is running, the sources under each answer, and clear states for every error the API can return
 - [ ] **Approvals page**: `/approvals`, approvers only. The pending refunds with customer, item, quantity, amount and reason, approve and reject buttons, and your own refund shown but not decidable
 - [ ] **Tests**: unit tests for the parser and the chat state, and browser tests for the flows with the API mocked
@@ -97,7 +97,7 @@ Run in a browser against the real backend, the seeded database and the real mode
 ## Build order
 
 - [x] 1. Scaffold the app, the `make` targets and the checks (type-check, lint, tests). Notes: the installed Next.js (16.4) is newer than most documentation, so framework code is written against the docs in `node_modules/next/dist/docs/` (`AGENTS.md` says so); the scaffold turns on Cache Components and Partial Prefetching, which are turned off here because there is nothing to prerender and hidden routes staying mounted would interact with a streaming answer; Vitest needed `vite` and `@testing-library/dom` installed explicitly; `npm audit` reports a high-severity `braces` advisory reached only through the lint config and the shadcn CLI, with no fix that does not downgrade them.
-- [ ] 2. The API client, the generated types and the stream parser, with the unit tests.
+- [x] 2. The API client, the generated types and the stream parser, with the unit tests. Notes: `make api-types` dumps `app.openapi()` and runs `openapi-typescript` into `frontend/src/api/schema.d.ts` (committed); `make api-types-check` regenerates it and fails on a diff. The client is `createApi({baseUrl, getToken, onUnauthorized})`, so the token store (step 3) plugs in without the client knowing where the token lives. `sendMessage` is an async generator of typed events; a 401 calls `onUnauthorized` only when a token was sent, so a wrong password on the login form does not look like an expired session. FastAPI's three `detail` shapes (string, `{code, message}`, a 422 list) become one `ApiError`.
 - [ ] 3. Login, the token, the header and the route guards.
 - [ ] 4. The chat reducer and the chat page (thread, composer, sources), with the unit and browser tests.
 - [ ] 5. The approvals page and its tests.
@@ -110,7 +110,7 @@ Run in a browser against the real backend, the seeded database and the real mode
 - [ ] **Roles**: a customer cannot reach the approvals page or see its link, and an approver's decisions go through the API
 - [ ] **Errors**: every error the API returns has a visible, recoverable state
 - [ ] **Tests**: unit and browser tests pass with no API key and no backend
-- [ ] **Types**: the generated API types match the backend's spec
+- [ ] **Types**: the generated API types match the backend's spec (`make api-types-check`; not yet run in CI)
 
 ## Decisions to confirm
 

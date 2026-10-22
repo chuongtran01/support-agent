@@ -1,4 +1,4 @@
-.PHONY: up down db-reset migrate seed install test lint eval-retrieval eval-agent frontend-install frontend-dev frontend-build frontend-check
+.PHONY: up down db-reset migrate seed install test lint eval-retrieval eval-agent frontend-install frontend-dev frontend-build frontend-check api-types api-types-check
 
 up:
 	docker compose up -d db
@@ -41,3 +41,13 @@ frontend-build:
 
 frontend-check:
 	cd frontend && npm run typecheck && npm run lint && npm test
+
+# The frontend's API types come from the backend's OpenAPI spec, so they cannot drift.
+api-types:
+	cd backend && .venv/bin/python -c "import json; from app.main import app; print(json.dumps(app.openapi()))" > ../frontend/openapi.json
+	cd frontend && npx openapi-typescript openapi.json -o src/api/schema.d.ts && rm openapi.json
+
+api-types-check:
+	cp frontend/src/api/schema.d.ts frontend/schema.committed.d.ts
+	$(MAKE) api-types
+	diff frontend/schema.committed.d.ts frontend/src/api/schema.d.ts; status=$$?; rm frontend/schema.committed.d.ts; exit $$status
