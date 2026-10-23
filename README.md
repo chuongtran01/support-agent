@@ -26,8 +26,20 @@ risky refunds, and an eval harness that measures all of it.
 cp .env.example .env
 make up
 make install
+make hooks      # git hooks: quick checks before a commit, the tests before a push
 make migrate
 ```
+
+### Git hooks
+
+`make hooks` points git at `.githooks/` (git does not do this on its own after a clone). Each hook only checks the side of the repo that changed:
+
+| Hook | Runs | Takes |
+| --- | --- | --- |
+| `pre-commit` | backend: `ruff check` and `ruff format --check`. Frontend: type-check and ESLint | a few seconds |
+| `pre-push` | backend: `ruff check` and the tests (the database must be running: `make up`). Frontend: type-check, ESLint, unit tests, and the browser tests. Either side: the generated API types still match the backend | about 30 seconds when both changed |
+
+`pre-push` looks at the commits being pushed, so a docs-only push skips it. Skip a hook once with `--no-verify`. The hooks run against your working tree, not the staged snapshot, so stash changes you are not committing. Nothing enforces them (there is no CI yet), so they are a convenience, not a gate.
 
 ## Seed the demo data
 

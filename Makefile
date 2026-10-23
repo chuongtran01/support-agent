@@ -1,4 +1,4 @@
-.PHONY: up down db-reset migrate seed install test lint eval-retrieval eval-agent frontend-install frontend-dev frontend-build frontend-check frontend-e2e frontend-demo api-types api-types-check
+.PHONY: up down db-reset migrate seed install hooks test lint eval-retrieval eval-agent frontend-install frontend-dev frontend-build frontend-check frontend-e2e frontend-demo api-types api-types-check
 
 up:
 	docker compose up -d db
@@ -17,6 +17,10 @@ seed:
 
 install:
 	cd backend && python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
+
+# Git hooks: quick checks before a commit, the tests before a push (see .githooks/).
+hooks:
+	git config core.hooksPath .githooks
 
 test:
 	cd backend && .venv/bin/pytest

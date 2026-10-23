@@ -1,0 +1,24 @@
+#!/bin/sh
+# Fast checks (a few seconds) on the side of the repo the commit touches. The slow ones, the
+# tests, run before a push. Turn this on with `make hooks`.
+HOOK=pre-commit
+. "$(dirname "$0")/lib.sh"
+cd "$ROOT" || exit 1
+
+CHANGED="$(git diff --cached --name-only --diff-filter=ACMR)"
+[ -z "$CHANGED" ] && exit 0
+
+if touches_backend; then
+  need_backend
+  echo "backend"
+  # from backend/, where the ruff settings are, as `make lint` does
+  run "ruff check" sh -c "cd backend && .venv/bin/ruff check ."
+  run "ruff format --check" sh -c "cd backend && .venv/bin/ruff format --check ."
+fi
+
+if touches_frontend; then
+  need_frontend
+  echo "frontend"
+  run "type-check" npm --prefix frontend run --silent typecheck
+  run "eslint" npm --prefix frontend run --silent lint
+fi
