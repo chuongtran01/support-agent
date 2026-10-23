@@ -1,6 +1,6 @@
 "use client";
 
-import { SendHorizontal } from "lucide-react";
+import { ArrowUp } from "lucide-react";
 import { useEffect, useRef, type FormEvent, type KeyboardEvent } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -50,8 +50,12 @@ export function Composer({
   }
 
   return (
-    <form onSubmit={submit} className="border-t bg-background p-3">
-      <div className="mx-auto flex max-w-2xl items-end gap-2">
+    <form onSubmit={submit} className="px-3 pt-2 pb-4">
+      {/* One rounded box with the field and the send button inside it, floating above the thread. */}
+      <div
+        data-disabled={disabled || undefined}
+        className="mx-auto flex max-w-2xl items-end gap-2 rounded-3xl border bg-background py-2 pr-2 pl-4 shadow-sm transition-shadow focus-within:ring-3 focus-within:ring-ring/30 data-disabled:opacity-60"
+      >
         <Textarea
           ref={field}
           value={value}
@@ -62,10 +66,16 @@ export function Composer({
           placeholder="Write a message…"
           aria-label="Message"
           disabled={disabled}
-          className="max-h-40 min-h-10 resize-none"
+          className="max-h-40 min-h-9 resize-none border-0 bg-transparent px-0 py-1.5 shadow-none focus-visible:border-0 focus-visible:ring-0 disabled:bg-transparent disabled:opacity-100 dark:bg-transparent"
         />
-        <Button type="submit" size="icon" aria-label="Send" disabled={!canSend}>
-          <SendHorizontal />
+        <Button
+          type="submit"
+          size="icon"
+          aria-label="Send"
+          disabled={!canSend}
+          className="size-9 shrink-0 rounded-full"
+        >
+          <ArrowUp />
         </Button>
       </div>
       {value.length >= COUNT_FROM && (
