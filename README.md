@@ -48,6 +48,21 @@ Log in with `POST /auth/login` (for example `alex@example.com` and the seed pass
 
 The agent calls the OpenAI Responses API with the model in `AGENT_MODEL` (default `gpt-6-luna`) and the reasoning level in `AGENT_REASONING_EFFORT` (`none`, `low`, `medium` or `high`; default `medium`).
 
+## Run the web app
+
+```sh
+make frontend-install
+make frontend-dev       # http://localhost:3000, with the API above running
+```
+
+Open it and click a demo account (the seed password is `demo`). Each account on the login page says what it is set up to show: Alex's boots are refunded at once, Priya's tent waits for approval, and the approver decides it on the Approvals page. The Orders page lists a customer's orders and opens the chat with a question in the box.
+
+```sh
+make frontend-check     # type-check, lint and unit tests
+make frontend-e2e       # browser tests with the API mocked (first: cd frontend && npx playwright install chromium)
+make frontend-demo      # the demo script against the real backend and model (see docs/PHASE5.md)
+```
+
 ## Load the knowledge base
 
 Set `OPENAI_API_KEY` in `.env` (embeddings use `text-embedding-3-small`), then:

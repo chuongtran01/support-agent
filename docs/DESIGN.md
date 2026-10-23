@@ -143,7 +143,7 @@ Six phases, each ending in a gate that must pass before the next starts.
 | 2 | Knowledge base and retrieval (done) | Trap and filler docs, ingestion, hybrid search, retrieval evals | recall@5 baseline set |
 | 3 | Policy engine and tools (done) | Refund and return rules, approval gate, scoped tools, unit tests | Policy tests pass, no LLM |
 | 4 | Agent loop and API (done) | Agent loop, escalation, sessions and auth, streaming API | Trap and tool evals run |
-| 5 | Frontend | Next.js chat with streaming, refund approval page | Full demo flow works |
+| 5 | Frontend (done) | Next.js chat with streaming, refund approval page | Full demo flow works |
 | 6 | Evals, tracing and polish | Full evals, injections, reranker ablation, Langfuse, README, demo | Numbers in the README |
 
 ## Risks and open decisions

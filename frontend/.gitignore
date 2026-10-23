@@ -16,6 +16,7 @@
 # next.js
 /.next/
 /.next-e2e/
+/.next-demo/
 /out/
 
 # production
@@ -46,3 +47,4 @@ next-env.d.ts
 /test-results/
 /playwright-report/
 /e2e/screenshots/
+/e2e-real/results/

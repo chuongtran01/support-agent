@@ -1,6 +1,6 @@
 # Phase 5: Frontend
 
-**Status:** in progress (step 6 of 7 done, plus the sidebar layout)
+**Status:** done
 **Gate:** full demo flow works
 
 ## Goal
@@ -19,7 +19,7 @@ The backend is not expected to change. If the UI turns out to need an endpoint, 
 - [x] **Orders page**: `/orders`, for every signed-in person. The customer's own orders newest first, with status, dates, total, items, and the status and amount of each refund, so they know what to ask. "Ask about this order" and "Ask about a return" open the chat with a question in the box (not sent). Added after step 6 with one backend endpoint, `GET /orders`
 - [x] **Approvals page**: `/approvals`, approvers only. The pending refunds with customer, item, quantity, amount and reason, approve and reject buttons, and your own refund shown but not decidable
 - [x] **Tests**: unit tests for the parser and the chat state, and browser tests for the flows with the API mocked
-- [ ] **Full-stack demo run**: the demo script below, run in a browser against the real backend and model, with the result recorded in this file
+- [x] **Full-stack demo run**: the demo script below, run in a browser against the real backend and model, with the result recorded in this file
 
 ## Architecture
 
@@ -105,15 +105,36 @@ Run in a browser against the real backend, the seeded database and the real mode
 - [x] 5. The approvals page and its tests. Notes: a table of the pending refunds with an `AlertDialog` that asks before a decision is sent; a decision removes the row and leaves a note, a `404` or `409` removes the row with the backend's message (the refund is no longer pending), a `403` keeps the row and says why, and any other failure stays in the dialog so the approver can try again. Added a Refresh button, since new refunds do not push to the page. Tested with Testing Library over a mocked `fetch` (11 tests, over the list, both decisions, cancel, own refund, each error and the empty and failed list). Checked by curl against the real backend that `GET /approvals` and the `404` for an unknown refund have the shapes the page reads; the page has not been run in a browser.
 - [x] 6. Error and edge states, responsive layout and the accessibility pass. Notes: Playwright is now set up (`make frontend-e2e`; 29 tests, each run at a desktop and a phone width, against a production build on port 3100 with its own `.next-e2e` folder and the backend mocked in the browser with `page.route`), and axe-core runs inside it (WCAG 2.x A/AA, with colour contrast, which jsdom cannot check). Screenshots at both widths found three real problems that the jsdom tests could not: on a phone the approvals table ran off-screen so Approve and Reject could not be reached (the rows are now cards below `md`, from one DOM); there was no way to switch chats on a phone (a drawer opened by a Chats button); and the source chip was the same colour as its bubble (now bordered, and 24px for the touch target). Axe found `--muted-foreground` under 4.5:1 on `--muted`, so it is darkened in `globals.css`. Also added: a loading state while a saved chat opens, a not-found page, an error boundary, a page title per route, `aria-current` on the active link, a table label, and `motion-reduce` on the spinner. `typecheck` now runs `next typegen` first, because the route types it needs are generated, and a fresh clone has none. **Sidebar layout (after step 6, at the owner's request):** the top header and the phone Chats drawer are replaced by one shadcn `Sidebar` on every page, laid out like a chat product: New chat and Approvals at the top, the chats under Today, Yesterday, Previous 7 days and Older, and the avatar with a Log out menu at the bottom. It collapses to an icon rail on a desktop (Cmd/Ctrl+B) and is a slide-in drawer on a phone, which gets a slim top bar holding only the menu button. The open chat is now the address again: the chats are links to `/chat?session=<id>` and the chat page follows `useSearchParams`, so the sidebar, Back and a reload all open the right chat; a chat made by the first message is written into the address with `history.replaceState`. This replaces the "read once, then follow the state" approach of step 4. The chat list lives in a `SessionsProvider` shared by the sidebar and the page. shadcn's `use-mobile` hook is changed to `useSyncExternalStore`, because the original set state in an effect and failed the lint rule. Not done: a dark theme (the shadcn dark tokens exist but nothing switches to them), and screen-reader testing by hand.
 - [x] 6b. The orders page (after step 6, at the owner's request). Notes: the customer could not tell what to ask, and the agent cannot list orders either (`lookup_order` needs an order number and nothing lists them), so a customer who did not know a number could not start a return. `GET /orders` returns the same `OrderView` the tool returns, newest first, from a new `app/orders.py` that both the endpoint and `lookup_order` now call, so the scoping to the caller's own orders is in one place (8 API tests, including that no customer sees another's orders; the 402 existing tests still pass). The page offers "Ask about a return" only for a delivered item with units that no refund has used and that is not final sale (policy still decides; this only hides the pointless), and "Ask about this order" on every order; both link to `/chat?ask=<question>`, which fills the composer, focuses it and leaves sending to the person. The buttons are real links (`buttonVariants` on a `Link`), not Base UI buttons with a `render` prop, which would have been announced as buttons. Their hidden text starts with the visible text, which axe requires. Pages reach the client with `useApi()` (which is `useAuth().api`, named for what the page wants), and the three places that fetch a list when the page opens (orders, approvals and the sidebar's chats) share `useLoad((api) => api.orders())` in `src/lib/use-load.ts`: it returns `data`, `error`, `loading`, `reload` and `update`, keeps the old data while a reload runs or fails, and drops an older answer that arrives after a newer one (8 tests). **What to ask (added after the orders page):** a new visitor still did not know what to say. An empty chat now offers clickable starter questions (`Suggestions`): two general policy questions, plus up to two about the person's own orders with real order numbers in them (a return for the newest returnable item, and a where-is-it for an order that has not arrived), built by the pure `suggestionsFor` from the same `GET /orders` data, so it works without the agent being able to list orders. Picking one fills the box and focuses it; it is not sent. The login page shows what each demo account is set up to show (for example "Return the tent: over $200, so it waits for approval"), taken from `backend/app/seed.py` and the demo script. Not done: a `list_orders` tool for the agent, which changes its behaviour and needs the evals re-run (suggested next, as its own change).
-- [ ] 7. Run the demo script against the real stack, fix what it finds, and record the run.
+- [x] 7. Run the demo script against the real stack, fix what it finds, and record the run. See "Demo run" below.
+
+## Demo run
+
+Run on 2026-10-22 in headless Chromium, with the real backend, the freshly seeded dev database, the real knowledge base (51 documents) and the real model (`gpt-6-luna`, `medium` reasoning). It is a script, `frontend/e2e-real/demo.spec.ts` (`make frontend-demo`), not a click-through by hand, so it can be repeated; it drives the same screens a person would (the demo buttons, the Orders page, the composer, the confirmation dialog) and then checks the result **in the backend**, not only on the screen. It uses its own ports (backend :8001, frontend :3101) so it does not disturb a running backend or `next dev`.
+
+**Result: all six steps passed, in two runs** (re-seeded between them; about 25 and 32 seconds). The wording of an answer differs from run to run, the outcomes did not.
+
+| Step | What the agent said (second run) | In the backend |
+| --- | --- | --- |
+| 1. Alex: minimum order for free shipping | "Standard shipping is free on orders of $75 or more." with a source chip. No stale $50 | |
+| 2. Alex: return the boots (from Orders, "Ask about a return") | "Your return is approved, and the $121.05 refund has been made after the $7.95 return label fee." | refund `completed`, 12105 cents |
+| 3. Priya: return the tent (from Orders) | "...pending review because refunds over $200 require approval. It has not been issued yet." | refund `pending`, 42105 cents |
+| 4. Taylor (approver): Approvals page | Priya Shah, Four-season tent × 1, $421.05 (and the seeded $240.00 parka); approved after the dialog; "Approved the $421.05 refund for Priya Shah." | refund `approved` |
+| 5. Priya: status of the tent refund | "The refund for the four-season tent on order #10 is approved. One unit was refunded for $421.05." The Orders page also showed "Approved $421.05" | |
+| 6. Alex: where is Priya's order #10 | "I couldn't find order #10 on your account." Nothing about the tent or its price | |
+
+The login-page hints for the other accounts were checked too (steps 7 to 9 of the script): Jordan's return went to manual review for having reached 3 refunds in 90 days and no refund was made; Morgan's return was made ($71.05, so the 91-day-old refund does not count); Sam's tent was refused because the order has not been delivered, and no refund exists.
+
+**What it found.** Nothing in the app needed fixing. The first attempt failed at the login, because a backend was already running on :8000 with only `localhost:3000` allowed as an origin (the browser blocked the call), so the demo now uses its own backend and frontend ports. Two things worth knowing: the script's "log out, log in as" is a fresh browser context per person (the log-out menu itself is covered by the mocked browser tests), and the run changes the data it runs against, so `make seed` after it.
+
+**What this does not show.** The errors are exercised in the mocked browser tests, not provoked against the real backend (a real `409 turn_in_progress` or a dropped stream is hard to cause on purpose). It was one model, two runs, so it says the flow works, not how often a model slips; that is what the phase 4 evals measure.
 
 ## Gate check
 
-- [ ] **Demo flow**: the six steps above work in a browser against the real backend and model
-- [ ] **Roles**: a customer cannot reach the approvals page or see its link, and an approver's decisions go through the API
-- [ ] **Errors**: every error the API returns has a visible, recoverable state
+- [x] **Demo flow**: the six steps above work in a browser against the real backend and model
+- [x] **Roles**: a customer cannot reach the approvals page or see its link, and an approver's decisions go through the API
+- [x] **Errors**: every error the API returns has a visible, recoverable state
 - [x] **Tests**: unit and browser tests pass with no API key and no backend
-- [ ] **Types**: the generated API types match the backend's spec (`make api-types-check`; not yet run in CI)
+- [x] **Types**: the generated API types match the backend's spec (`make api-types-check`; not yet run in CI)
 
 ## Decisions to confirm
 

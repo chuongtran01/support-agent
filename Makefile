@@ -1,4 +1,4 @@
-.PHONY: up down db-reset migrate seed install test lint eval-retrieval eval-agent frontend-install frontend-dev frontend-build frontend-check frontend-e2e api-types api-types-check
+.PHONY: up down db-reset migrate seed install test lint eval-retrieval eval-agent frontend-install frontend-dev frontend-build frontend-check frontend-e2e frontend-demo api-types api-types-check
 
 up:
 	docker compose up -d db
@@ -45,6 +45,12 @@ frontend-check:
 # Browser tests (Playwright) with the backend mocked. First time: cd frontend && npx playwright install chromium
 frontend-e2e:
 	cd frontend && npm run e2e
+
+# The demo script in a real browser against the REAL backend and model (uses the OpenAI key and
+# decides a refund: `make seed` before and after). Needs a backend on :8001 that allows :3101:
+#   cd backend && CORS_ORIGINS=http://localhost:3101 .venv/bin/uvicorn app.main:app --port 8001
+frontend-demo:
+	cd frontend && npm run demo
 
 # The frontend's API types come from the backend's OpenAPI spec, so they cannot drift.
 api-types:
