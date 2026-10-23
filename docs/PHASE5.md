@@ -1,6 +1,6 @@
 # Phase 5: Frontend
 
-**Status:** in progress (step 4 of 7 done)
+**Status:** in progress (step 5 of 7 done)
 **Gate:** full demo flow works
 
 ## Goal
@@ -16,7 +16,7 @@ The backend is not expected to change. If the UI turns out to need an endpoint, 
 - [x] **Login and session**: `/login` with a one-click button per seeded demo customer and the approver, the token kept for the tab, a header with the customer's name and membership, log out, and a redirect to `/login` on any `401`
 - [x] **Stream reader**: `fetch` with the `Authorization` header and a small server-sent-events parser, because `EventSource` cannot send headers. Pure functions, unit tested
 - [x] **Chat page**: `/chat`. Session list, message thread and composer, the answer streaming in, a line showing which tool is running, the sources under each answer, and clear states for every error the API can return
-- [ ] **Approvals page**: `/approvals`, approvers only. The pending refunds with customer, item, quantity, amount and reason, approve and reject buttons, and your own refund shown but not decidable
+- [x] **Approvals page**: `/approvals`, approvers only. The pending refunds with customer, item, quantity, amount and reason, approve and reject buttons, and your own refund shown but not decidable
 - [ ] **Tests**: unit tests for the parser and the chat state, and browser tests for the flows with the API mocked
 - [ ] **Full-stack demo run**: the demo script below, run in a browser against the real backend and model, with the result recorded in this file
 
@@ -67,7 +67,7 @@ Plain, readable and responsive down to a phone width. The components come from s
 | The chat thread and composer | our own `Thread` and `Composer`, built from `Message`, `Bubble`, `Marker` (the "looking up your order" line), `MessageScroller` (follows the streaming answer and offers a scroll-to-end button), `Textarea` and `Button` |
 | Session list; the same list in a drawer on a phone | `Sidebar` (or `ScrollArea` with `Sheet`) |
 | A source chip that shows the document title and heading | `Popover` (or `HoverCard`) with `Badge` |
-| The pending refunds | `Table`, `Badge`, `Skeleton` while loading |
+| The pending refunds | `Table`, `Badge`, `Skeleton` while loading, `Alert` for the notes |
 | Confirming approve or reject | `AlertDialog` |
 | Errors and "answering..." notes | `Alert`, `Sonner` toasts |
 
@@ -100,7 +100,7 @@ Run in a browser against the real backend, the seeded database and the real mode
 - [x] 2. The API client, the generated types and the stream parser, with the unit tests. Notes: `make api-types` dumps `app.openapi()` and runs `openapi-typescript` into `frontend/src/api/schema.d.ts` (committed); `make api-types-check` regenerates it and fails on a diff. The client is `createApi({baseUrl, getToken, onUnauthorized})`, so the token store (step 3) plugs in without the client knowing where the token lives. `sendMessage` is an async generator of typed events; a 401 calls `onUnauthorized` only when a token was sent, so a wrong password on the login form does not look like an expired session. FastAPI's three `detail` shapes (string, `{code, message}`, a 422 list) become one `ApiError`.
 - [x] 3. Login, the token, the header and the route guards. Notes: `AuthProvider` (`src/lib/auth.tsx`) restores the session by calling `GET /me` with the stored token and holds one of four states (loading, anonymous, unreachable, signed in); `RequireAuth` redirects an anonymous visitor to `/login`, shows "Not allowed" for the wrong role, and keeps the token and offers a retry when the backend cannot be reached (so a restart is not a logout); the routes under `src/app/(app)/` share the guard and header, and `/` redirects to `/chat`. The demo password (`demo`) is a constant in the login page. Checked by curl against the real backend: the CORS preflight and a login work from `http://localhost:3000`; not yet run in a browser.
 - [x] 4. The chat reducer and the chat page (thread, composer, sources), with the unit and browser tests. Notes: the state is one reducer (`src/chat/reducer.ts`) and `useChat` plays the stream into it; the open chat is a single page with the session in `?session=` (written with `history.replaceState`, read once on load) instead of a `/chat/[id]` route, because changing the route when the first message creates the session would remount the page in the middle of the answer. The words written before a tool call are dropped from the live answer, because the backend does not keep them, so a reload shows what was streamed. A request that fails before any event gives the message back to the box, including a network failure. The "browser tests" are Testing Library tests of the whole page in jsdom with `fetch` mocked (10 of them, over the page, composer, errors and sources); Playwright is not set up yet and is left for step 6 or 7. The session list is hidden below the `md` width; the phone drawer is step 6. Checked by curl that the real backend's frames (`tool` with `started`/`finished`, then `text`) match the parser; the page itself has not been run in a browser.
-- [ ] 5. The approvals page and its tests.
+- [x] 5. The approvals page and its tests. Notes: a table of the pending refunds with an `AlertDialog` that asks before a decision is sent; a decision removes the row and leaves a note, a `404` or `409` removes the row with the backend's message (the refund is no longer pending), a `403` keeps the row and says why, and any other failure stays in the dialog so the approver can try again. Added a Refresh button, since new refunds do not push to the page. Tested with Testing Library over a mocked `fetch` (11 tests, over the list, both decisions, cancel, own refund, each error and the empty and failed list). Checked by curl against the real backend that `GET /approvals` and the `404` for an unknown refund have the shapes the page reads; the page has not been run in a browser.
 - [ ] 6. Error and edge states, responsive layout and the accessibility pass.
 - [ ] 7. Run the demo script against the real stack, fix what it finds, and record the run.
 
