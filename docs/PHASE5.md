@@ -1,6 +1,6 @@
 # Phase 5: Frontend
 
-**Status:** in progress (step 2 of 7 done)
+**Status:** in progress (step 3 of 7 done)
 **Gate:** full demo flow works
 
 ## Goal
@@ -13,7 +13,7 @@ The backend is not expected to change. If the UI turns out to need an endpoint, 
 
 - [x] **App scaffold**: `frontend/`, Next.js 16 (App Router) with TypeScript, Tailwind 4 and shadcn/ui, Vitest with Testing Library, `npm` scripts for dev, build, lint, type-check and tests, and `make` targets for them (`make frontend-install`, `frontend-dev`, `frontend-build`, `frontend-check`)
 - [x] **API client and types**: `frontend/src/api/`. A typed client for every endpoint, with the request and response types generated from the backend's OpenAPI spec (`make api-types`) so they cannot drift, and hand-written types for the stream events (OpenAPI does not describe them)
-- [ ] **Login and session**: `/login` with a one-click button per seeded demo customer and the approver, the token kept for the tab, a header with the customer's name and membership, log out, and a redirect to `/login` on any `401`
+- [x] **Login and session**: `/login` with a one-click button per seeded demo customer and the approver, the token kept for the tab, a header with the customer's name and membership, log out, and a redirect to `/login` on any `401`
 - [x] **Stream reader**: `fetch` with the `Authorization` header and a small server-sent-events parser, because `EventSource` cannot send headers. Pure functions, unit tested
 - [ ] **Chat page**: `/chat`. Session list, message thread and composer, the answer streaming in, a line showing which tool is running, the sources under each answer, and clear states for every error the API can return
 - [ ] **Approvals page**: `/approvals`, approvers only. The pending refunds with customer, item, quantity, amount and reason, approve and reject buttons, and your own refund shown but not decidable
@@ -98,7 +98,7 @@ Run in a browser against the real backend, the seeded database and the real mode
 
 - [x] 1. Scaffold the app, the `make` targets and the checks (type-check, lint, tests). Notes: the installed Next.js (16.4) is newer than most documentation, so framework code is written against the docs in `node_modules/next/dist/docs/` (`AGENTS.md` says so); the scaffold turns on Cache Components and Partial Prefetching, which are turned off here because there is nothing to prerender and hidden routes staying mounted would interact with a streaming answer; Vitest needed `vite` and `@testing-library/dom` installed explicitly; `npm audit` reports a high-severity `braces` advisory reached only through the lint config and the shadcn CLI, with no fix that does not downgrade them.
 - [x] 2. The API client, the generated types and the stream parser, with the unit tests. Notes: `make api-types` dumps `app.openapi()` and runs `openapi-typescript` into `frontend/src/api/schema.d.ts` (committed); `make api-types-check` regenerates it and fails on a diff. The client is `createApi({baseUrl, getToken, onUnauthorized})`, so the token store (step 3) plugs in without the client knowing where the token lives. `sendMessage` is an async generator of typed events; a 401 calls `onUnauthorized` only when a token was sent, so a wrong password on the login form does not look like an expired session. FastAPI's three `detail` shapes (string, `{code, message}`, a 422 list) become one `ApiError`.
-- [ ] 3. Login, the token, the header and the route guards.
+- [x] 3. Login, the token, the header and the route guards. Notes: `AuthProvider` (`src/lib/auth.tsx`) restores the session by calling `GET /me` with the stored token and holds one of four states (loading, anonymous, unreachable, signed in); `RequireAuth` redirects an anonymous visitor to `/login`, shows "Not allowed" for the wrong role, and keeps the token and offers a retry when the backend cannot be reached (so a restart is not a logout); the routes under `src/app/(app)/` share the guard and header, and `/` redirects to `/chat`. The demo password (`demo`) is a constant in the login page. Checked by curl against the real backend: the CORS preflight and a login work from `http://localhost:3000`; not yet run in a browser.
 - [ ] 4. The chat reducer and the chat page (thread, composer, sources), with the unit and browser tests.
 - [ ] 5. The approvals page and its tests.
 - [ ] 6. Error and edge states, responsive layout and the accessibility pass.
