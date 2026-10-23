@@ -5,6 +5,8 @@ import type { NextConfig } from "next";
 // that goes with it) is left off to keep navigation plain: with it on, Next.js keeps hidden
 // routes mounted, which would interact with a streaming answer.
 const nextConfig: NextConfig = {
+  // The browser tests build into their own folder, so they do not disturb a running `next dev`.
+  distDir: process.env.NEXT_DIST_DIR ?? ".next",
   turbopack: {
     // A package-lock.json in the home directory confuses root detection; pin it here
     root: import.meta.dirname,

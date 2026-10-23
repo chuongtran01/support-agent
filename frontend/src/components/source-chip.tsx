@@ -19,7 +19,7 @@ export function SourceChip({
     <Popover>
       <PopoverTrigger
         aria-label={`Source ${number}: ${citation.title}`}
-        className="mx-0.5 inline-flex size-5 -translate-y-0.5 items-center justify-center rounded-full bg-muted text-xs font-medium text-muted-foreground align-middle hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        className="mx-0.5 inline-flex size-6 -translate-y-0.5 items-center justify-center rounded-full border bg-background text-xs font-medium text-foreground align-middle hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring"
       >
         {number}
       </PopoverTrigger>

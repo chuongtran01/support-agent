@@ -10,7 +10,10 @@ import { AuthProvider } from "@/lib/auth";
 import { getToken, setToken } from "@/lib/token";
 
 const replace = vi.fn();
-vi.mock("next/navigation", () => ({ useRouter: () => ({ replace }) }));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ replace }),
+  usePathname: () => "/chat",
+}));
 
 const fetchMock = vi.fn();
 vi.stubGlobal("fetch", fetchMock);

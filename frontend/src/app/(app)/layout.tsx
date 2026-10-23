@@ -1,7 +1,7 @@
 import { Header } from "@/components/header";
 import { RequireAuth } from "@/components/require-auth";
 
-export default function AppLayout({ children }: LayoutProps<"/">) {
+export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <RequireAuth>
       <div className="flex h-dvh flex-col">

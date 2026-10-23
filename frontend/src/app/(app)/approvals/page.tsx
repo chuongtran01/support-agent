@@ -188,8 +188,8 @@ function Approvals() {
       )}
 
       {rows && rows.length > 0 && (
-        <Table>
-          <TableHeader>
+        <Table aria-label="Pending refunds" className="max-md:block">
+          <TableHeader className="max-md:hidden">
             <TableRow>
               <TableHead>Customer</TableHead>
               <TableHead>Item</TableHead>
@@ -201,29 +201,32 @@ function Approvals() {
               </TableHead>
             </TableRow>
           </TableHeader>
-          <TableBody>
+          <TableBody className="max-md:block">
             {rows.map((refund) => (
-              <TableRow key={refund.refund_id}>
-                <TableCell className="font-medium">
+              <TableRow
+                key={refund.refund_id}
+                className="max-md:grid max-md:grid-cols-[1fr_auto] max-md:gap-x-3 max-md:gap-y-1 max-md:py-3"
+              >
+                <TableCell className="font-medium max-md:p-0 max-md:whitespace-normal max-md:col-start-1 max-md:row-start-1">
                   {refund.customer_name}
                 </TableCell>
-                <TableCell>
+                <TableCell className="max-md:p-0 max-md:whitespace-normal max-md:col-start-1 max-md:row-start-2">
                   {refund.item_name} × {refund.quantity}
                 </TableCell>
-                <TableCell className="text-right tabular-nums">
+                <TableCell className="text-right tabular-nums max-md:p-0 max-md:whitespace-normal max-md:col-start-2 max-md:row-start-1">
                   {formatCents(refund.amount_cents)}
                 </TableCell>
-                <TableCell>
+                <TableCell className="max-md:p-0 max-md:whitespace-normal max-md:col-start-2 max-md:row-start-2 max-md:justify-self-end">
                   <Badge variant="secondary">
                     {REASONS[refund.reason] ?? refund.reason}
                   </Badge>
                 </TableCell>
-                <TableCell className="text-muted-foreground">
+                <TableCell className="text-muted-foreground max-md:p-0 max-md:whitespace-normal max-md:col-span-2 max-md:row-start-3">
                   {when.format(new Date(refund.created_at))}
                 </TableCell>
-                <TableCell>
-                  <div className="flex flex-col items-end gap-1">
-                    <div className="flex gap-2">
+                <TableCell className="max-md:p-0 max-md:whitespace-normal max-md:col-span-2 max-md:row-start-4 max-md:pt-2">
+                  <div className="flex flex-col items-end gap-1 max-md:items-stretch">
+                    <div className="flex gap-2 max-md:[&>button]:h-9 max-md:[&>button]:flex-1">
                       <Button
                         size="sm"
                         disabled={refund.is_own}

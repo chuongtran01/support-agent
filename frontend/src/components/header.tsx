@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
@@ -12,19 +13,25 @@ const MEMBERSHIPS: Record<string, string> = {
 
 export function Header() {
   const { state, logout } = useAuth();
+  const pathname = usePathname();
   if (state.status !== "signedIn") return null;
   const { name, role, membership } = state.profile;
   return (
     <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b px-4 py-3">
       <span className="font-semibold">Northwind Outfitters</span>
       <nav aria-label="Main" className="flex gap-3 text-sm">
-        <Link href="/chat" className="underline-offset-4 hover:underline">
+        <Link
+          href="/chat"
+          aria-current={pathname === "/chat" ? "page" : undefined}
+          className="underline-offset-4 hover:underline aria-[current=page]:font-medium aria-[current=page]:underline"
+        >
           Chat
         </Link>
         {role === "approver" && (
           <Link
             href="/approvals"
-            className="underline-offset-4 hover:underline"
+            aria-current={pathname === "/approvals" ? "page" : undefined}
+            className="underline-offset-4 hover:underline aria-[current=page]:font-medium aria-[current=page]:underline"
           >
             Approvals
           </Link>

@@ -1,4 +1,4 @@
-.PHONY: up down db-reset migrate seed install test lint eval-retrieval eval-agent frontend-install frontend-dev frontend-build frontend-check api-types api-types-check
+.PHONY: up down db-reset migrate seed install test lint eval-retrieval eval-agent frontend-install frontend-dev frontend-build frontend-check frontend-e2e api-types api-types-check
 
 up:
 	docker compose up -d db
@@ -41,6 +41,10 @@ frontend-build:
 
 frontend-check:
 	cd frontend && npm run typecheck && npm run lint && npm test
+
+# Browser tests (Playwright) with the backend mocked. First time: cd frontend && npx playwright install chromium
+frontend-e2e:
+	cd frontend && npm run e2e
 
 # The frontend's API types come from the backend's OpenAPI spec, so they cannot drift.
 api-types:

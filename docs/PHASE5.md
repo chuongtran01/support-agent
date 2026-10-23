@@ -1,6 +1,6 @@
 # Phase 5: Frontend
 
-**Status:** in progress (step 5 of 7 done)
+**Status:** in progress (step 6 of 7 done)
 **Gate:** full demo flow works
 
 ## Goal
@@ -17,7 +17,7 @@ The backend is not expected to change. If the UI turns out to need an endpoint, 
 - [x] **Stream reader**: `fetch` with the `Authorization` header and a small server-sent-events parser, because `EventSource` cannot send headers. Pure functions, unit tested
 - [x] **Chat page**: `/chat`. Session list, message thread and composer, the answer streaming in, a line showing which tool is running, the sources under each answer, and clear states for every error the API can return
 - [x] **Approvals page**: `/approvals`, approvers only. The pending refunds with customer, item, quantity, amount and reason, approve and reject buttons, and your own refund shown but not decidable
-- [ ] **Tests**: unit tests for the parser and the chat state, and browser tests for the flows with the API mocked
+- [x] **Tests**: unit tests for the parser and the chat state, and browser tests for the flows with the API mocked
 - [ ] **Full-stack demo run**: the demo script below, run in a browser against the real backend and model, with the result recorded in this file
 
 ## Architecture
@@ -78,7 +78,7 @@ The primitives give the keyboard and screen-reader behavior of the dialogs, popo
 None needs the backend, an API key or the network.
 
 - **Unit (Vitest):** the SSE parser (frames split across reads, several frames in one read, a frame with unusual whitespace, the stream ending early), the chat reducer (a full turn, a tool-only reply, an error mid-answer, `done` with citations), and the citation marker replacement (valid, invalid, repeated, no markers).
-- **Browser (Playwright, API mocked with route interception):** log in as a customer and as an approver; send a message and see it stream and the sources appear; each error state; a customer cannot see the Approvals link and sees "not allowed" at `/approvals`; approve and reject (after the confirmation) remove the row; a `401` goes to the login page.
+- **Browser (Playwright, API mocked with route interception; `make frontend-e2e`, desktop and phone widths, plus an axe-core accessibility check):** log in as a customer and as an approver; send a message and see it stream and the sources appear; each error state; a customer cannot see the Approvals link and sees "not allowed" at `/approvals`; approve and reject (after the confirmation) remove the row; a `401` goes to the login page.
 - **Types:** `tsc --noEmit` and lint run with the tests, and a check fails if the generated API types differ from what the backend's spec produces.
 
 The model is not in these tests. Whether the agent answers well is measured by the phase 4 evals; this phase checks that the UI shows what the API sends.
@@ -101,7 +101,7 @@ Run in a browser against the real backend, the seeded database and the real mode
 - [x] 3. Login, the token, the header and the route guards. Notes: `AuthProvider` (`src/lib/auth.tsx`) restores the session by calling `GET /me` with the stored token and holds one of four states (loading, anonymous, unreachable, signed in); `RequireAuth` redirects an anonymous visitor to `/login`, shows "Not allowed" for the wrong role, and keeps the token and offers a retry when the backend cannot be reached (so a restart is not a logout); the routes under `src/app/(app)/` share the guard and header, and `/` redirects to `/chat`. The demo password (`demo`) is a constant in the login page. Checked by curl against the real backend: the CORS preflight and a login work from `http://localhost:3000`; not yet run in a browser.
 - [x] 4. The chat reducer and the chat page (thread, composer, sources), with the unit and browser tests. Notes: the state is one reducer (`src/chat/reducer.ts`) and `useChat` plays the stream into it; the open chat is a single page with the session in `?session=` (written with `history.replaceState`, read once on load) instead of a `/chat/[id]` route, because changing the route when the first message creates the session would remount the page in the middle of the answer. The words written before a tool call are dropped from the live answer, because the backend does not keep them, so a reload shows what was streamed. A request that fails before any event gives the message back to the box, including a network failure. The "browser tests" are Testing Library tests of the whole page in jsdom with `fetch` mocked (10 of them, over the page, composer, errors and sources); Playwright is not set up yet and is left for step 6 or 7. The session list is hidden below the `md` width; the phone drawer is step 6. Checked by curl that the real backend's frames (`tool` with `started`/`finished`, then `text`) match the parser; the page itself has not been run in a browser.
 - [x] 5. The approvals page and its tests. Notes: a table of the pending refunds with an `AlertDialog` that asks before a decision is sent; a decision removes the row and leaves a note, a `404` or `409` removes the row with the backend's message (the refund is no longer pending), a `403` keeps the row and says why, and any other failure stays in the dialog so the approver can try again. Added a Refresh button, since new refunds do not push to the page. Tested with Testing Library over a mocked `fetch` (11 tests, over the list, both decisions, cancel, own refund, each error and the empty and failed list). Checked by curl against the real backend that `GET /approvals` and the `404` for an unknown refund have the shapes the page reads; the page has not been run in a browser.
-- [ ] 6. Error and edge states, responsive layout and the accessibility pass.
+- [x] 6. Error and edge states, responsive layout and the accessibility pass. Notes: Playwright is now set up (`make frontend-e2e`; 29 tests, each run at a desktop and a phone width, against a production build on port 3100 with its own `.next-e2e` folder and the backend mocked in the browser with `page.route`), and axe-core runs inside it (WCAG 2.x A/AA, with colour contrast, which jsdom cannot check). Screenshots at both widths found three real problems that the jsdom tests could not: on a phone the approvals table ran off-screen so Approve and Reject could not be reached (the rows are now cards below `md`, from one DOM); there was no way to switch chats on a phone (a drawer opened by a Chats button); and the source chip was the same colour as its bubble (now bordered, and 24px for the touch target). Axe found `--muted-foreground` under 4.5:1 on `--muted`, so it is darkened in `globals.css`. Also added: a loading state while a saved chat opens, a not-found page, an error boundary, a page title per route, `aria-current` on the active link, a table label, and `motion-reduce` on the spinner. `typecheck` now runs `next typegen` first, because the route types it needs are generated, and a fresh clone has none. Not done: a dark theme (the shadcn dark tokens exist but nothing switches to them), and screen-reader testing by hand.
 - [ ] 7. Run the demo script against the real stack, fix what it finds, and record the run.
 
 ## Gate check
@@ -109,7 +109,7 @@ Run in a browser against the real backend, the seeded database and the real mode
 - [ ] **Demo flow**: the six steps above work in a browser against the real backend and model
 - [ ] **Roles**: a customer cannot reach the approvals page or see its link, and an approver's decisions go through the API
 - [ ] **Errors**: every error the API returns has a visible, recoverable state
-- [ ] **Tests**: unit and browser tests pass with no API key and no backend
+- [x] **Tests**: unit and browser tests pass with no API key and no backend
 - [ ] **Types**: the generated API types match the backend's spec (`make api-types-check`; not yet run in CI)
 
 ## Decisions to confirm

@@ -21,6 +21,7 @@ function toChatError(error: unknown): ChatError {
 export function useChat(api: Api) {
   const [state, dispatch] = useReducer(chatReducer, initialChatState);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false); // a saved chat is being fetched
   const current = useRef<string | null>(null); // the open session, readable inside async code
   const generation = useRef(0); // bumped whenever the chat is switched, so late results are ignored
   const stream = useRef<AbortController | null>(null);
@@ -37,6 +38,7 @@ export function useChat(api: Api) {
       stream.current?.abort();
       select(id);
       dispatch({ type: "reset" });
+      setLoading(id !== null);
       if (!id) return;
       try {
         const messages = await api.messages(id);
@@ -54,6 +56,8 @@ export function useChat(api: Api) {
         } else {
           dispatch({ type: "failed", error: toChatError(error) });
         }
+      } finally {
+        if (mine === generation.current) setLoading(false);
       }
     },
     [api, select],
@@ -131,5 +135,5 @@ export function useChat(api: Api) {
     [],
   );
 
-  return { state, sessionId, open, send };
+  return { state, sessionId, loading, open, send };
 }

@@ -1,8 +1,18 @@
 "use client";
 
+import { Menu } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import type { Session } from "@/api/types";
+import { Button } from "@/components/ui/button";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import { Composer } from "@/components/composer";
 import { SessionList } from "@/components/session-list";
 import { Thread } from "@/components/thread";
@@ -11,7 +21,8 @@ import { useAuth } from "@/lib/auth";
 
 export default function ChatPage() {
   const { api } = useAuth();
-  const { state, sessionId, open, send } = useChat(api);
+  const { state, sessionId, loading, open, send } = useChat(api);
+  const [drawer, setDrawer] = useState(false); // the chat list on a phone
   const [sessions, setSessions] = useState<Session[]>([]);
   const [draft, setDraft] = useState("");
   // The open chat is kept in the address (?session=...) so a reload comes back to it. It is
@@ -64,10 +75,40 @@ export default function ChatPage() {
         />
       </aside>
       <section className="flex min-w-0 flex-1 flex-col">
+        <div className="flex items-center border-b px-2 py-1.5 md:hidden">
+          <Sheet open={drawer} onOpenChange={setDrawer}>
+            <SheetTrigger render={<Button variant="ghost" size="sm" />}>
+              <Menu /> Chats
+            </SheetTrigger>
+            <SheetContent side="left" className="p-0">
+              <SheetHeader className="sr-only">
+                <SheetTitle>Chats</SheetTitle>
+                <SheetDescription>
+                  Your earlier chats, and a button to start a new one.
+                </SheetDescription>
+              </SheetHeader>
+              <div className="pt-10">
+                <SessionList
+                  sessions={sessions}
+                  activeId={sessionId}
+                  onOpen={(id) => {
+                    setDrawer(false);
+                    void open(id);
+                  }}
+                  onNew={() => {
+                    setDrawer(false);
+                    void open(null);
+                  }}
+                />
+              </div>
+            </SheetContent>
+          </Sheet>
+        </div>
         <Thread
           messages={state.messages}
           turn={state.turn}
           error={state.error}
+          loading={loading}
           onNewChat={() => void open(null)}
         />
         <Composer

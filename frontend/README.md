@@ -8,6 +8,7 @@ npm install
 cp .env.example .env.local   # NEXT_PUBLIC_API_URL, the backend's address
 npm run dev                  # http://localhost:3000
 npm run typecheck && npm run lint && npm test
+npm run e2e   # browser tests; first time: npx playwright install chromium
 ```
 
 From the repo root the same things are `make frontend-install`, `frontend-dev`,

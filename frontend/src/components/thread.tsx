@@ -51,11 +51,13 @@ export function Thread({
   messages,
   turn,
   error,
+  loading,
   onNewChat,
 }: {
   messages: ChatMessage[];
   turn: LiveTurn | null;
   error: ChatError | null;
+  loading: boolean;
   onNewChat: () => void;
 }) {
   return (
@@ -67,7 +69,17 @@ export function Thread({
             aria-busy={turn !== null}
             className="mx-auto max-w-2xl gap-3 p-4"
           >
-            {messages.length === 0 && !turn && (
+            {loading && (
+              <MessageScrollerItem messageId="loading">
+                <Marker role="status">
+                  <MarkerIcon>
+                    <Loader2 className="animate-spin motion-reduce:animate-none" />
+                  </MarkerIcon>
+                  <MarkerContent>Loading chat…</MarkerContent>
+                </Marker>
+              </MessageScrollerItem>
+            )}
+            {messages.length === 0 && !turn && !loading && (
               <MessageScrollerItem messageId="empty">
                 <p className="py-16 text-center text-muted-foreground">
                   Ask about an order, a return, shipping or anything else.
@@ -94,7 +106,7 @@ export function Thread({
                 ) : (
                   <Marker role="status">
                     <MarkerIcon>
-                      <Loader2 className="animate-spin" />
+                      <Loader2 className="animate-spin motion-reduce:animate-none" />
                     </MarkerIcon>
                     <MarkerContent>
                       {turn.tool ? toolStatus(turn.tool) : "Thinking…"}
