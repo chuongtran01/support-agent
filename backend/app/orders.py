@@ -1,5 +1,8 @@
 """A customer's orders, with their items and refunds. The one place that reads them, so the
-``lookup_order`` tool and the orders endpoint cannot disagree about whose they are."""
+``lookup_order`` and ``list_orders`` tools and the orders endpoint cannot disagree about whose
+they are: every query starts from ``_mine``."""
+
+from collections.abc import Sequence
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,20 +14,37 @@ from app.tools.results import OrderItemView, OrderView, RefundView
 COUNTED_STATUSES = ("pending", "approved", "completed")
 
 
-async def orders_for(
-    session: AsyncSession,
-    customer_id: int,
-    order_id: int | None = None,
-    limit: int | None = None,
+def _mine(customer_id: int):
+    """The one place that says whose orders these are."""
+    return select(models.Order).where(models.Order.customer_id == customer_id)
+
+
+def _newest_first(query):
+    return query.order_by(models.Order.placed_at.desc(), models.Order.id.desc())
+
+
+async def get_order(session: AsyncSession, customer_id: int, order_id: int) -> OrderView | None:
+    """One of the customer's orders, or None. Another customer's order is never returned: it
+    looks the same as one that does not exist."""
+    query = _mine(customer_id).where(models.Order.id == order_id)
+    views = await _views(session, (await session.scalars(query)).all())
+    return views[0] if views else None
+
+
+async def find_orders(
+    session: AsyncSession, customer_id: int, *, limit: int | None = None
 ) -> list[OrderView]:
-    """The customer's orders, newest first, or just one of them, or only the newest ``limit``.
-    Another customer's order is never returned: it looks the same as one that does not exist."""
-    query = select(models.Order).where(models.Order.customer_id == customer_id)
-    if order_id is not None:
-        query = query.where(models.Order.id == order_id)
-    orders = (
-        await session.scalars(query.order_by(models.Order.placed_at.desc(), models.Order.id.desc()))
-    ).all()
+    """The customer's orders, newest first, or only the newest ``limit`` of them. The limit is
+    in the query, so a customer with thousands of orders does not load them all."""
+    query = _newest_first(_mine(customer_id))
+    if limit is not None:
+        query = query.limit(limit)
+    return await _views(session, (await session.scalars(query)).all())
+
+
+async def _views(session: AsyncSession, orders: Sequence[models.Order]) -> list[OrderView]:
+    """The orders with their items and refunds, in the order given: two queries in all, not
+    two per order."""
     if not orders:
         return []
     ids = [order.id for order in orders]

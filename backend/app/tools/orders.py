@@ -1,4 +1,4 @@
-from app.orders import orders_for
+from app.orders import find_orders, get_order
 from app.tools.context import ToolContext
 from app.tools.results import (
     ListOrdersResult,
@@ -14,7 +14,7 @@ MAX_LISTED = 20
 async def list_orders(ctx: ToolContext) -> ListOrdersResult:
     """The session customer's own orders, newest first, in short. The customer comes from the
     session, never from the model, so there is nothing to ask for and no one else's to see."""
-    orders = await orders_for(ctx.session, ctx.customer_id, limit=MAX_LISTED + 1)
+    orders = await find_orders(ctx.session, ctx.customer_id, limit=MAX_LISTED + 1)
     if not orders:
         return ListOrdersResult(status="no_orders", message="This customer has no orders.")
     return ListOrdersResult(
@@ -42,7 +42,7 @@ async def list_orders(ctx: ToolContext) -> ListOrdersResult:
 async def lookup_order(ctx: ToolContext, order_id: int) -> LookupOrderResult:
     """Return one of the session customer's orders. Another customer's order looks the same
     as one that does not exist."""
-    orders = await orders_for(ctx.session, ctx.customer_id, order_id)
-    if not orders:
+    order = await get_order(ctx.session, ctx.customer_id, order_id)
+    if order is None:
         return LookupOrderResult(status="not_found", message="No matching order was found.")
-    return LookupOrderResult(status="ok", order=orders[0])
+    return LookupOrderResult(status="ok", order=order)
