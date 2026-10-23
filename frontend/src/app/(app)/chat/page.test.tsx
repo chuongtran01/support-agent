@@ -3,10 +3,16 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AuthProvider } from "@/lib/auth";
+import { SessionsProvider } from "@/lib/sessions";
 import { setToken } from "@/lib/token";
 import ChatPage from "./page";
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: vi.fn() }) }));
+// The address is the real one in jsdom. The router writes to it, as Next.js does.
+const toAddress = (url: string) => window.history.replaceState(null, "", url);
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ replace: toAddress, push: toAddress }),
+  useSearchParams: () => new URLSearchParams(window.location.search),
+}));
 
 const fetchMock = vi.fn();
 vi.stubGlobal("fetch", fetchMock);
@@ -69,7 +75,9 @@ async function open() {
   setToken("tok");
   render(
     <AuthProvider>
-      <ChatPage />
+      <SessionsProvider>
+        <ChatPage />
+      </SessionsProvider>
     </AuthProvider>,
   );
   return screen.findByRole("textbox", { name: "Message" });
@@ -268,9 +276,6 @@ describe("ChatPage", () => {
     expect(
       screen.getByRole("button", { name: "Source 1: Shipping" }),
     ).toBeInTheDocument();
-    expect(
-      await screen.findByRole("button", { name: /Shipping question/ }),
-    ).toHaveAttribute("aria-current", "page");
   });
 
   it("starts a new chat when the saved one is gone", async () => {

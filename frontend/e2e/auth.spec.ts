@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { alerts, mockBackend, signIn } from "./backend";
+import { alerts, mockBackend, openSidebar, signIn, signOut } from "./backend";
 
 test.beforeEach(async ({ page }) => {
   await mockBackend(page);
@@ -11,6 +11,7 @@ test("a customer signs in with one click and lands in the chat", async ({
 }) => {
   await signIn(page, "Alex Rivera");
   await expect(page).toHaveURL(/\/chat$/);
+  await openSidebar(page);
   await expect(page.getByText("Alex Rivera")).toBeVisible();
   await expect(page.getByText("Basic member")).toBeVisible();
   await expect(page.getByRole("link", { name: "Approvals" })).toHaveCount(0);
@@ -19,6 +20,7 @@ test("a customer signs in with one click and lands in the chat", async ({
 test("an approver lands on the approvals page", async ({ page }) => {
   await signIn(page, "Taylor Brooks");
   await expect(page).toHaveURL(/\/approvals$/);
+  await openSidebar(page);
   await expect(page.getByRole("link", { name: "Approvals" })).toBeVisible();
 });
 
@@ -63,7 +65,7 @@ test("logging out returns to the login page and forgets the token", async ({
   page,
 }) => {
   await signIn(page, "Alex Rivera");
-  await page.getByRole("button", { name: "Log out" }).click();
+  await signOut(page);
   await expect(page).toHaveURL(/\/login$/);
   await page.goto("/chat");
   await expect(page).toHaveURL(/\/login$/);

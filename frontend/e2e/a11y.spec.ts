@@ -3,6 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import {
   mockBackend,
+  openSidebar,
   SESSION_ID,
   SHIPPING,
   signIn,
@@ -87,5 +88,29 @@ test("the approvals page and its dialog have no accessibility violations", async
     .click();
   await expect(page.getByRole("alertdialog")).toBeVisible();
   await page.waitForTimeout(400); // let the dialog finish fading in before contrast is measured
+  expect(await violations(page)).toEqual([]);
+});
+
+test("the sidebar and its menu have no accessibility violations", async ({
+  page,
+}) => {
+  await mockBackend(page, {
+    sessions: [
+      {
+        id: "a",
+        created_at: new Date().toISOString(),
+        preview: "Where is my order?",
+      },
+      { id: "b", created_at: "2020-01-01T10:00:00Z", preview: "Old question" },
+    ],
+  });
+  await signIn(page, "Taylor Brooks");
+  await openSidebar(page);
+  await expect(page.getByText("Where is my order?")).toBeVisible();
+  await page.waitForTimeout(400); // the phone drawer slides in
+  expect(await violations(page)).toEqual([]);
+  await page.getByRole("button", { name: /Taylor Brooks/ }).click();
+  await expect(page.getByRole("menuitem", { name: "Log out" })).toBeVisible();
+  await page.waitForTimeout(300);
   expect(await violations(page)).toEqual([]);
 });

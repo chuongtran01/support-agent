@@ -3,7 +3,6 @@ import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { Header } from "@/components/header";
 import { RequireAuth } from "@/components/require-auth";
 import LoginPage from "@/app/login/page";
 import { AuthProvider } from "@/lib/auth";
@@ -104,45 +103,6 @@ describe("RequireAuth", () => {
     backend(taylor);
     app(<RequireAuth role="approver">secret</RequireAuth>);
     expect(await screen.findByText("secret")).toBeInTheDocument();
-  });
-});
-
-describe("Header", () => {
-  it("shows the name, the membership and no Approvals link to a customer", async () => {
-    setToken("tok");
-    backend(alex);
-    app(<Header />);
-    expect(await screen.findByText("Alex Rivera")).toBeInTheDocument();
-    expect(screen.getByText(/Basic member/)).toBeInTheDocument();
-    expect(
-      screen.queryByRole("link", { name: "Approvals" }),
-    ).not.toBeInTheDocument();
-  });
-
-  it("shows the Approvals link to an approver", async () => {
-    setToken("tok");
-    backend(taylor);
-    app(<Header />);
-    expect(
-      await screen.findByRole("link", { name: "Approvals" }),
-    ).toHaveAttribute("href", "/approvals");
-  });
-
-  it("logs out: forgets the token and hides itself", async () => {
-    setToken("tok");
-    backend(alex);
-    app(
-      <>
-        <Header />
-        <RequireAuth>secret</RequireAuth>
-      </>,
-    );
-    await userEvent.click(
-      await screen.findByRole("button", { name: "Log out" }),
-    );
-    expect(getToken()).toBeNull();
-    await waitFor(() => expect(replace).toHaveBeenCalledWith("/login"));
-    expect(screen.queryByText("Alex Rivera")).not.toBeInTheDocument();
   });
 });
 

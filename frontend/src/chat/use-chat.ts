@@ -17,8 +17,19 @@ function toChatError(error: unknown): ChatError {
   return { message: UNREACHABLE };
 }
 
+export interface ChatCallbacks {
+  /** A chat was made for the first message. The page puts its id in the address. */
+  onCreated: (id: string) => void;
+  /** The open chat does not exist (any more). The page takes its id out of the address. */
+  onGone: () => void;
+}
+
 /** One open chat: its messages, the answer being written, and the calls that change them. */
-export function useChat(api: Api) {
+export function useChat(api: Api, callbacks: ChatCallbacks) {
+  const handlers = useRef(callbacks);
+  useEffect(() => {
+    handlers.current = callbacks;
+  });
   const [state, dispatch] = useReducer(chatReducer, initialChatState);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false); // a saved chat is being fetched
@@ -30,6 +41,8 @@ export function useChat(api: Api) {
     current.current = id;
     setSessionId(id);
   }, []);
+
+  const isOpen = useCallback((id: string | null) => current.current === id, []);
 
   /** Switches to a saved chat, or to a new one when `id` is null. */
   const open = useCallback(
@@ -47,6 +60,7 @@ export function useChat(api: Api) {
         if (mine !== generation.current) return;
         if (error instanceof ApiError && error.status === 404) {
           select(null);
+          handlers.current.onGone();
           dispatch({
             type: "failed",
             error: {
@@ -70,6 +84,7 @@ export function useChat(api: Api) {
       const reject = (error: unknown) => {
         if (error instanceof ApiError && error.status === 404) {
           select(null); // the chat is gone, so the next message starts a new one
+          handlers.current.onGone();
           dispatch({
             type: "rejected",
             error: {
@@ -93,6 +108,7 @@ export function useChat(api: Api) {
         }
         if (mine !== generation.current) return true;
         select(id);
+        handlers.current.onCreated(id);
       }
 
       const controller = new AbortController();
@@ -135,5 +151,5 @@ export function useChat(api: Api) {
     [],
   );
 
-  return { state, sessionId, loading, open, send };
+  return { state, sessionId, loading, open, isOpen, send };
 }

@@ -178,3 +178,21 @@ export async function signIn(page: Page, who: string) {
 /** The alerts of the app itself, not Next.js's hidden route announcer, which is also an alert. */
 export const alerts = (page: Page) =>
   page.locator('[role="alert"]:not(#__next-route-announcer__)');
+
+/** Opens the menu on the avatar at the bottom of the sidebar and logs out (the sidebar is a drawer on a phone). */
+export async function signOut(page: Page) {
+  const toggle = page.getByRole("button", { name: "Toggle Sidebar" });
+  if (
+    (await toggle.first().isVisible()) &&
+    (await page.viewportSize())!.width < 768
+  )
+    await toggle.first().click();
+  await page.getByRole("button", { name: /Rivera|Brooks|Shah/ }).click();
+  await page.getByRole("menuitem", { name: "Log out" }).click();
+}
+
+/** On a phone the sidebar is hidden until its button is pressed. On a desktop this does nothing. */
+export async function openSidebar(page: Page) {
+  if ((await page.viewportSize())!.width < 768)
+    await page.getByRole("button", { name: "Toggle Sidebar" }).first().click();
+}

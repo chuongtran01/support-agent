@@ -4,6 +4,7 @@ import {
   alerts,
   frame,
   mockBackend,
+  openSidebar,
   SESSION_ID,
   SHIPPING,
   signIn,
@@ -113,7 +114,9 @@ test("a full chat offers a new one", async ({ page }) => {
   await box.press("Enter");
   await page.getByRole("button", { name: "Start a new chat" }).click();
   await expect(alerts(page)).toHaveCount(0);
-  await expect(page.getByRole("log").getByText("What is the minimum order")).toHaveCount(0);
+  await expect(
+    page.getByRole("log").getByText("What is the minimum order"),
+  ).toHaveCount(0);
 });
 
 test("an error in the stream is shown and the box stays usable", async ({
@@ -166,17 +169,83 @@ test("a chat that no longer exists is replaced by a new one", async ({
   await expect(page).not.toHaveURL(/session=/);
 });
 
-test("the list of chats opens another chat (the drawer on a phone)", async ({
+test("the sidebar lists the chats, and a click opens one", async ({ page }) => {
+  await mockBackend(page, saved);
+  await signIn(page, "Alex Rivera");
+  await openSidebar(page);
+  await page.getByRole("link", { name: /What is the minimum order/ }).click();
+  await expect(page.getByText("Free shipping starts at $75")).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`session=${SESSION_ID}`));
+  await openSidebar(page);
+  await expect(
+    page.getByRole("link", { name: /What is the minimum order/ }),
+  ).toHaveAttribute("data-active", "");
+});
+
+test("New chat in the sidebar leaves the open chat for an empty one", async ({
   page,
-  isMobile,
 }) => {
   await mockBackend(page, saved);
   await signIn(page, "Alex Rivera");
-  if (isMobile) await page.getByRole("button", { name: "Chats" }).click();
-  await page.getByRole("button", { name: /What is the minimum order/ }).click();
+  await page.goto(`/chat?session=${SESSION_ID}`);
   await expect(page.getByText("Free shipping starts at $75")).toBeVisible();
-  await expect(page).toHaveURL(new RegExp(`session=${SESSION_ID}`));
-  if (isMobile) await expect(page.getByRole("dialog")).toHaveCount(0); // the drawer closed
+  await openSidebar(page);
+  await page.getByRole("link", { name: "New chat" }).click();
+  await expect(page.getByText("Ask about an order")).toBeVisible();
+  await expect(page).not.toHaveURL(/session=/);
+});
+
+test("the chats are grouped by date", async ({ page }) => {
+  await mockBackend(page, {
+    sessions: [
+      {
+        id: "today-1",
+        created_at: new Date().toISOString(),
+        preview: "Where is my order?",
+      },
+      {
+        id: "old-1",
+        created_at: "2020-01-01T10:00:00Z",
+        preview: "Old question",
+      },
+    ],
+  });
+  await signIn(page, "Alex Rivera");
+  await openSidebar(page);
+  await expect(page.getByText("Today")).toBeVisible();
+  await expect(page.getByText("Older")).toBeVisible();
+});
+
+test("the sidebar collapses to icons on a desktop", async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(isMobile, "a phone shows the sidebar as a drawer");
+  await mockBackend(page, saved);
+  await signIn(page, "Alex Rivera");
+  await expect(page.getByText("Northwind Outfitters").first()).toBeVisible();
+  await page.getByRole("button", { name: "Toggle Sidebar" }).first().click();
+  await expect(page.getByText("Northwind Outfitters").first()).toBeHidden();
+  await expect(page.getByRole("link", { name: "New chat" })).toBeVisible(); // still there, as an icon
+  await expect(
+    page.getByRole("link", { name: /What is the minimum order/ }),
+  ).toBeHidden();
+});
+
+test("an approver reaches Approvals from the sidebar, and the chats stay listed", async ({
+  page,
+}) => {
+  await mockBackend(page, saved);
+  await signIn(page, "Taylor Brooks");
+  await openSidebar(page);
+  await expect(
+    page.getByRole("link", { name: /What is the minimum order/ }),
+  ).toBeVisible();
+  await page.getByRole("link", { name: "New chat" }).click();
+  await expect(page).toHaveURL(/\/chat$/);
+  await openSidebar(page);
+  await page.getByRole("link", { name: "Approvals" }).click();
+  await expect(page).toHaveURL(/\/approvals$/);
 });
 
 test("the page does not scroll sideways", async ({ page }) => {
