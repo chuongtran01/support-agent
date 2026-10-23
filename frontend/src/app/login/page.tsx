@@ -18,13 +18,44 @@ import { homeFor, useAuth } from "@/lib/auth";
 
 // The seeded customers (backend/app/seed.py). Every one has the SEED_PASSWORD, "demo" by default.
 const DEMO_PASSWORD = "demo";
+// What each seeded customer is set up to show (backend/app/seed.py), so a new visitor knows what to try.
 const DEMO_ACCOUNTS = [
-  { email: "alex@example.com", name: "Alex Rivera", note: "Basic member" },
-  { email: "priya@example.com", name: "Priya Shah", note: "Plus member" },
-  { email: "sam@example.com", name: "Sam Okafor", note: "No membership" },
-  { email: "jordan@example.com", name: "Jordan Lee", note: "Basic member" },
-  { email: "morgan@example.com", name: "Morgan Chen", note: "Basic member" },
-  { email: "approver@example.com", name: "Taylor Brooks", note: "Approver" },
+  {
+    email: "alex@example.com",
+    name: "Alex Rivera",
+    note: "Basic member",
+    hint: "Return the trail boots (5 days old)",
+  },
+  {
+    email: "priya@example.com",
+    name: "Priya Shah",
+    note: "Plus member",
+    hint: "Return the tent: over $200, so it waits for approval",
+  },
+  {
+    email: "sam@example.com",
+    name: "Sam Okafor",
+    note: "No membership",
+    hint: "An order still processing, and a water filter",
+  },
+  {
+    email: "jordan@example.com",
+    name: "Jordan Lee",
+    note: "Basic member",
+    hint: "Three refunds already: the next goes to a person",
+  },
+  {
+    email: "morgan@example.com",
+    name: "Morgan Chen",
+    note: "Basic member",
+    hint: "Three refunds, but only two in the last 90 days",
+  },
+  {
+    email: "approver@example.com",
+    name: "Taylor Brooks",
+    note: "Approver",
+    hint: "Decide Priya's pending parka refund",
+  },
 ];
 
 export default function LoginPage() {
@@ -93,6 +124,9 @@ export default function LoginPage() {
                 <span>{account.name}</span>
                 <span className="text-xs font-normal text-muted-foreground">
                   {account.note}
+                </span>
+                <span className="mt-1 text-left text-xs font-normal whitespace-normal text-foreground/80">
+                  {account.hint}
                 </span>
               </Button>
             ))}

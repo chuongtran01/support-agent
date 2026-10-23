@@ -2,6 +2,8 @@ import { expect, test } from "@playwright/test";
 
 import {
   alerts,
+  DELIVERED_ORDER,
+  SHIPPED_ORDER,
   frame,
   mockBackend,
   openSidebar,
@@ -257,4 +259,45 @@ test("the page does not scroll sideways", async ({ page }) => {
     () => document.documentElement.scrollWidth - window.innerWidth,
   );
   expect(overflow).toBeLessThanOrEqual(0);
+});
+
+test("an empty chat suggests questions, including ones about the person's orders", async ({
+  page,
+}) => {
+  await mockBackend(page, { orders: [SHIPPED_ORDER, DELIVERED_ORDER] });
+  await signIn(page, "Alex Rivera");
+  await expect(
+    page.getByRole("heading", { name: "How can I help?" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", {
+      name: "What's the minimum order for free shipping?",
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", {
+      name: "I'd like to return the Trail boots from order #14.",
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Where is order #20?" }),
+  ).toBeVisible();
+});
+
+test("picking a suggestion fills the box, ready to send", async ({ page }) => {
+  await mockBackend(page, { orders: [DELIVERED_ORDER] });
+  await signIn(page, "Alex Rivera");
+  await page
+    .getByRole("button", { name: "How long do I have to return something?" })
+    .click();
+  const box = page.getByRole("textbox", { name: "Message" });
+  await expect(box).toHaveValue("How long do I have to return something?");
+  await expect(box).toBeFocused();
+  await box.press("Enter");
+  await expect(
+    page.getByRole("log").getByText("How long do I have to return something?"),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "How can I help?" }),
+  ).toHaveCount(0); // gone once the chat starts
 });

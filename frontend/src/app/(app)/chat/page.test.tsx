@@ -37,15 +37,22 @@ const SESSION = "11111111-1111-1111-1111-111111111111";
 
 interface Backend {
   sessions?: unknown[];
+  orders?: unknown[];
   messages?: unknown[] | Response;
   send?: () => Response;
 }
 
-function backend({ sessions = [], messages = [], send }: Backend = {}) {
+function backend({
+  sessions = [],
+  orders = [],
+  messages = [],
+  send,
+}: Backend = {}) {
   fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
     const path = url.replace("http://localhost:8000", "");
     const method = init?.method ?? "GET";
     if (path === "/me") return json(200, alex);
+    if (path === "/orders") return json(200, orders);
     if (path === "/sessions" && method === "GET") return json(200, sessions);
     if (path === "/sessions" && method === "POST") {
       return json(201, {
@@ -296,6 +303,107 @@ describe("ChatPage", () => {
     window.history.replaceState(null, "", `/chat?ask=${"x".repeat(3000)}`);
     backend();
     expect(((await open()) as HTMLTextAreaElement).value).toHaveLength(2000);
+  });
+
+  it("suggests questions in an empty chat, with ones about the person's own orders", async () => {
+    backend({
+      orders: [
+        {
+          id: 20,
+          status: "shipped",
+          placed_at: "2026-10-01T10:00:00Z",
+          delivered_at: null,
+          total_cents: 1800,
+          refunds: [],
+          items: [
+            {
+              order_item_id: 5,
+              sku: "BTL",
+              name: "Water bottle",
+              price_cents: 1800,
+              quantity: 1,
+              category: "other",
+              is_final_sale: false,
+              units_refunded: 0,
+            },
+          ],
+        },
+        {
+          id: 14,
+          status: "delivered",
+          placed_at: "2026-10-01T10:00:00Z",
+          delivered_at: "2026-10-05T10:00:00Z",
+          total_cents: 12900,
+          refunds: [],
+          items: [
+            {
+              order_item_id: 1,
+              sku: "BOOT",
+              name: "Trail boots",
+              price_cents: 12900,
+              quantity: 1,
+              category: "footwear",
+              is_final_sale: false,
+              units_refunded: 0,
+            },
+          ],
+        },
+      ],
+    });
+    await open();
+    expect(
+      screen.getByRole("button", {
+        name: "What's the minimum order for free shipping?",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", {
+        name: "I'd like to return the Trail boots from order #14.",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Where is order #20?" }),
+    ).toBeInTheDocument();
+  });
+
+  it("puts a picked suggestion in the box and does not send it", async () => {
+    backend();
+    const box = await open();
+    await userEvent.click(
+      screen.getByRole("button", {
+        name: "How long do I have to return something?",
+      }),
+    );
+    expect(box).toHaveValue("How long do I have to return something?");
+    expect(box).toHaveFocus();
+    expect(sent()).toEqual([]);
+  });
+
+  it("shows no suggestions once the chat has messages", async () => {
+    window.history.replaceState(null, "", `/chat?session=${SESSION}`);
+    backend({
+      messages: [
+        {
+          id: 1,
+          role: "user",
+          text: "Hi",
+          created_at: "2026-10-22T10:00:00Z",
+          citations: [],
+          dropped_citations: 0,
+        },
+        {
+          id: 2,
+          role: "assistant",
+          text: "Hello.",
+          created_at: "2026-10-22T10:00:01Z",
+          citations: [],
+          dropped_citations: 0,
+        },
+      ],
+    });
+    await open();
+    expect(await screen.findByText("Hello.")).toBeInTheDocument();
+    expect(screen.queryByText("How can I help?")).not.toBeInTheDocument();
   });
 
   it("starts a new chat when the saved one is gone", async () => {

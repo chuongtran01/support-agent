@@ -127,3 +127,14 @@ test("the orders page has no accessibility violations", async ({ page }) => {
   await expect(page.getByText("Order #14", { exact: true })).toBeVisible();
   expect(await violations(page)).toEqual([]);
 });
+
+test("the empty chat with its suggestions has no accessibility violations", async ({
+  page,
+}) => {
+  await mockBackend(page, { orders: [SHIPPED_ORDER, DELIVERED_ORDER] });
+  await signIn(page, "Alex Rivera");
+  await expect(
+    page.getByRole("button", { name: "Where is order #20?" }),
+  ).toBeVisible();
+  expect(await violations(page)).toEqual([]);
+});

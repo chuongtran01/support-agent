@@ -15,6 +15,7 @@ import {
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
 import { SourceChip } from "@/components/source-chip";
+import { Suggestions } from "@/components/suggestions";
 import { answerParts } from "@/chat/answer";
 import type { ChatError, ChatMessage, LiveTurn } from "@/chat/reducer";
 import { toolStatus } from "@/chat/tools";
@@ -53,12 +54,15 @@ export function Thread({
   error,
   loading,
   onNewChat,
+  onSuggest,
 }: {
   messages: ChatMessage[];
   turn: LiveTurn | null;
   error: ChatError | null;
   loading: boolean;
   onNewChat: () => void;
+  /** A suggested question was picked in the empty chat. */
+  onSuggest: (text: string) => void;
 }) {
   return (
     <MessageScrollerProvider autoScroll defaultScrollPosition="last-anchor">
@@ -81,9 +85,7 @@ export function Thread({
             )}
             {messages.length === 0 && !turn && !loading && (
               <MessageScrollerItem messageId="empty">
-                <p className="py-16 text-center text-muted-foreground">
-                  Ask about an order, a return, shipping or anything else.
-                </p>
+                <Suggestions onPick={onSuggest} />
               </MessageScrollerItem>
             )}
             {messages.map((message) => (

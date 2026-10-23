@@ -82,3 +82,15 @@ test("an unknown address shows a not-found page", async ({ page }) => {
     page.getByRole("heading", { name: "Page not found" }),
   ).toBeVisible();
 });
+
+test("each demo account says what it is set up to show", async ({ page }) => {
+  await page.goto("/login");
+  await expect(
+    page.getByText("Return the trail boots (5 days old)"),
+  ).toBeVisible();
+  await expect(page.getByText(/Return the tent: over \$200/)).toBeVisible();
+  await expect(page.getByText(/Three refunds already/)).toBeVisible();
+  await expect(
+    page.getByText(/Decide Priya's pending parka refund/),
+  ).toBeVisible();
+});

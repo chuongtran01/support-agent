@@ -43,9 +43,10 @@ test("asking about a return opens the chat with the question in the box", async 
   );
   await expect(box).toBeFocused();
   await expect(page).toHaveURL(/\/chat$/); // the question is not left in the address
+  // not sent: the chat is still empty, so its suggestions are still showing
   await expect(
-    page.getByRole("log").getByText("I'd like to return"),
-  ).toHaveCount(0); // not sent yet
+    page.getByRole("heading", { name: "How can I help?" }),
+  ).toBeVisible();
 });
 
 test("the question can be sent as it is", async ({ page }) => {

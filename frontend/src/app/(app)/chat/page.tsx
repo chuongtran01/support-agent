@@ -27,6 +27,7 @@ function Chat() {
     onGone: () => router.replace("/chat"),
   });
   const [draft, setDraft] = useState(asked);
+  const [focusSignal, setFocusSignal] = useState(0);
   const running = state.turn !== null;
 
   useEffect(() => {
@@ -61,6 +62,10 @@ function Chat() {
         error={state.error}
         loading={loading}
         onNewChat={startNewChat}
+        onSuggest={(text) => {
+          setDraft(text);
+          setFocusSignal((n) => n + 1);
+        }}
       />
       <Composer
         value={draft}
@@ -68,6 +73,7 @@ function Chat() {
         onSend={(text) => void onSend(text)}
         disabled={running}
         autoFocus={asked !== ""}
+        focusSignal={focusSignal}
       />
     </div>
   );

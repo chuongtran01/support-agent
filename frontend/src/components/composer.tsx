@@ -15,6 +15,7 @@ export function Composer({
   onSend,
   disabled,
   autoFocus = false,
+  focusSignal = 0,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -22,6 +23,8 @@ export function Composer({
   disabled: boolean;
   /** Put the cursor in the box when it first shows. */
   autoFocus?: boolean;
+  /** Changes each time the page wants the cursor back in the box, for example after it fills it. */
+  focusSignal?: number;
 }) {
   const field = useRef<HTMLTextAreaElement>(null);
   const wasDisabled = useRef(disabled);
@@ -31,6 +34,10 @@ export function Composer({
     if (wasDisabled.current && !disabled) field.current?.focus();
     wasDisabled.current = disabled;
   }, [disabled]);
+
+  useEffect(() => {
+    if (focusSignal > 0) field.current?.focus();
+  }, [focusSignal]);
 
   const text = value.trim();
   const canSend = !disabled && text.length > 0;
