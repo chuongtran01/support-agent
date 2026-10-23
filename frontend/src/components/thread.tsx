@@ -67,7 +67,7 @@ export function Thread({
           {/* Announce a row when it is added, not every word of it: wait while a turn streams. */}
           <MessageScrollerContent
             aria-busy={turn !== null}
-            className="mx-auto max-w-2xl gap-3 p-4"
+            className="mx-auto max-w-2xl gap-6 px-4 pt-10 pb-4"
           >
             {loading && (
               <MessageScrollerItem messageId="loading">
