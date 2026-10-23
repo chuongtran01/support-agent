@@ -16,7 +16,7 @@ export type DecisionResult = Schemas["DecisionOut"];
 // `sse_frame` in backend/app/api/sse.py by hand.
 export type StreamEvent =
   | { type: "text"; text: string }
-  | { type: "tool"; name: string; phase: string; status: string }
+  | { type: "tool"; name: string; phase: "started" | "finished"; status: string | null }
   | {
       type: "done";
       messageId: number;

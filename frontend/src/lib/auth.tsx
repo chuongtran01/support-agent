@@ -1,6 +1,12 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
 
 import { createApi, ApiError, type Api } from "@/api/client";
 import type { Profile } from "@/api/types";
@@ -70,7 +76,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setState({ status: "anonymous" });
   };
 
-  return <AuthContext value={{ state, api, login, logout }}>{children}</AuthContext>;
+  return (
+    <AuthContext value={{ state, api, login, logout }}>{children}</AuthContext>
+  );
 }
 
 export function useAuth(): Auth {

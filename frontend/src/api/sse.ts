@@ -77,7 +77,11 @@ export function toStreamEvent(frame: SseFrame): StreamEvent | null {
       return { type: "text", text };
     }
     case "tool": {
-      const { name, phase, status } = payload as { name: string; phase: string; status: string };
+      const { name, phase, status } = payload as {
+        name: string;
+        phase: "started" | "finished";
+        status: string | null;
+      };
       return { type: "tool", name, phase, status };
     }
     case "done": {

@@ -5,7 +5,10 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
 
-const MEMBERSHIPS: Record<string, string> = { basic: "Basic member", plus: "Plus member" };
+const MEMBERSHIPS: Record<string, string> = {
+  basic: "Basic member",
+  plus: "Plus member",
+};
 
 export function Header() {
   const { state, logout } = useAuth();
@@ -15,19 +18,31 @@ export function Header() {
     <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b px-4 py-3">
       <span className="font-semibold">Northwind Outfitters</span>
       <nav aria-label="Main" className="flex gap-3 text-sm">
-        <Link href="/chat" className="underline-offset-4 hover:underline">Chat</Link>
+        <Link href="/chat" className="underline-offset-4 hover:underline">
+          Chat
+        </Link>
         {role === "approver" && (
-          <Link href="/approvals" className="underline-offset-4 hover:underline">Approvals</Link>
+          <Link
+            href="/approvals"
+            className="underline-offset-4 hover:underline"
+          >
+            Approvals
+          </Link>
         )}
       </nav>
       <div className="ml-auto flex items-center gap-3 text-sm">
         <span>
           {name}
           {MEMBERSHIPS[membership] && (
-            <span className="text-muted-foreground"> · {MEMBERSHIPS[membership]}</span>
+            <span className="text-muted-foreground">
+              {" "}
+              · {MEMBERSHIPS[membership]}
+            </span>
           )}
         </span>
-        <Button variant="outline" size="sm" onClick={logout}>Log out</Button>
+        <Button variant="outline" size="sm" onClick={logout}>
+          Log out
+        </Button>
       </div>
     </header>
   );

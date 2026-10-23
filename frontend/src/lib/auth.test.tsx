@@ -16,7 +16,10 @@ const fetchMock = vi.fn();
 vi.stubGlobal("fetch", fetchMock);
 
 const reply = (status: number, body: unknown) =>
-  new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
 
 const alex = { name: "Alex Rivera", role: "customer", membership: "basic" };
 const taylor = { name: "Taylor Brooks", role: "approver", membership: "none" };
@@ -28,14 +31,19 @@ function backend(profile: typeof alex, password = "demo") {
     if (url.endsWith("/auth/login")) {
       const body = JSON.parse(init!.body as string);
       return body.password === password
-        ? reply(200, { token: "tok-1", token_type: "bearer", customer: profile })
+        ? reply(200, {
+            token: "tok-1",
+            token_type: "bearer",
+            customer: profile,
+          })
         : reply(401, { detail: "Wrong email or password" });
     }
     throw new Error(`unexpected ${url}`);
   });
 }
 
-const app = (children: ReactNode) => render(<AuthProvider>{children}</AuthProvider>);
+const app = (children: ReactNode) =>
+  render(<AuthProvider>{children}</AuthProvider>);
 
 beforeEach(() => sessionStorage.clear());
 afterEach(() => {
@@ -56,7 +64,9 @@ describe("RequireAuth", () => {
     backend(alex);
     app(<RequireAuth>secret</RequireAuth>);
     expect(await screen.findByText("secret")).toBeInTheDocument();
-    expect(new Headers(fetchMock.mock.calls[0][1].headers).get("Authorization")).toBe("Bearer tok");
+    expect(
+      new Headers(fetchMock.mock.calls[0][1].headers).get("Authorization"),
+    ).toBe("Bearer tok");
   });
 
   it("drops a token the backend refuses and goes to the login page", async () => {
@@ -71,7 +81,9 @@ describe("RequireAuth", () => {
     setToken("tok");
     fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
     app(<RequireAuth>secret</RequireAuth>);
-    expect(await screen.findByRole("alert")).toHaveTextContent(/can't reach the server/i);
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /can't reach the server/i,
+    );
     expect(getToken()).toBe("tok");
     expect(replace).not.toHaveBeenCalled();
   });
@@ -99,14 +111,18 @@ describe("Header", () => {
     app(<Header />);
     expect(await screen.findByText("Alex Rivera")).toBeInTheDocument();
     expect(screen.getByText(/Basic member/)).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "Approvals" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "Approvals" }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows the Approvals link to an approver", async () => {
     setToken("tok");
     backend(taylor);
     app(<Header />);
-    expect(await screen.findByRole("link", { name: "Approvals" })).toHaveAttribute("href", "/approvals");
+    expect(
+      await screen.findByRole("link", { name: "Approvals" }),
+    ).toHaveAttribute("href", "/approvals");
   });
 
   it("logs out: forgets the token and hides itself", async () => {
@@ -118,7 +134,9 @@ describe("Header", () => {
         <RequireAuth>secret</RequireAuth>
       </>,
     );
-    await userEvent.click(await screen.findByRole("button", { name: "Log out" }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Log out" }),
+    );
     expect(getToken()).toBeNull();
     await waitFor(() => expect(replace).toHaveBeenCalledWith("/login"));
     expect(screen.queryByText("Alex Rivera")).not.toBeInTheDocument();
@@ -129,7 +147,9 @@ describe("LoginPage", () => {
   it("signs in a demo customer with one click and opens the chat", async () => {
     backend(alex);
     app(<LoginPage />);
-    await userEvent.click(await screen.findByRole("button", { name: /Alex Rivera/ }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Alex Rivera/ }),
+    );
     await waitFor(() => expect(replace).toHaveBeenCalledWith("/chat"));
     expect(getToken()).toBe("tok-1");
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
@@ -141,17 +161,24 @@ describe("LoginPage", () => {
   it("sends an approver to the approvals page", async () => {
     backend(taylor);
     app(<LoginPage />);
-    await userEvent.click(await screen.findByRole("button", { name: /Taylor Brooks/ }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Taylor Brooks/ }),
+    );
     await waitFor(() => expect(replace).toHaveBeenCalledWith("/approvals"));
   });
 
   it("says so for a wrong password, and stays on the page", async () => {
     backend(alex, "right");
     app(<LoginPage />);
-    await userEvent.type(await screen.findByLabelText("Email"), "alex@example.com");
+    await userEvent.type(
+      await screen.findByLabelText("Email"),
+      "alex@example.com",
+    );
     await userEvent.type(screen.getByLabelText("Password"), "wrong");
     await userEvent.click(screen.getByRole("button", { name: "Sign in" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("Wrong email or password.");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Wrong email or password.",
+    );
     expect(getToken()).toBeNull();
     expect(replace).not.toHaveBeenCalled();
   });

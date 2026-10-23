@@ -68,8 +68,8 @@ describe("toStreamEvent", () => {
   it("reads each event the backend sends", () => {
     expect(toStreamEvent({ event: "text", data: '{"text":"Hi"}' })).toEqual({ type: "text", text: "Hi" });
     expect(
-      toStreamEvent({ event: "tool", data: '{"name":"lookup_order","phase":"start","status":"ok"}' }),
-    ).toEqual({ type: "tool", name: "lookup_order", phase: "start", status: "ok" });
+      toStreamEvent({ event: "tool", data: '{"name":"lookup_order","phase":"started","status":null}' }),
+    ).toEqual({ type: "tool", name: "lookup_order", phase: "started", status: null });
     expect(toStreamEvent({ event: "error", data: '{"message":"Sorry"}' })).toEqual({
       type: "error",
       message: "Sorry",
@@ -96,7 +96,7 @@ describe("toStreamEvent", () => {
 describe("readEvents", () => {
   it("yields a whole turn in order, however the bytes are cut", () => {
     const text = [
-      frame("tool", { name: "search_knowledge", phase: "start", status: "running" }),
+      frame("tool", { name: "search_knowledge", phase: "started", status: null }),
       frame("text", { text: "Free shipping starts at $75." }),
       frame("done", { message_id: 4, citations: [], dropped_citations: 0 }),
     ].join("");
