@@ -1,7 +1,7 @@
 "use client";
 
 import { RefreshCw } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { ApiError } from "@/api/client";
 import type { Decision, PendingRefund } from "@/api/types";
@@ -28,7 +28,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useAuth } from "@/lib/auth";
+import { useApi } from "@/lib/auth";
+import { useLoad } from "@/lib/use-load";
 import { formatCents } from "@/lib/money";
 
 const REASONS: Record<string, string> = {
@@ -56,44 +57,23 @@ interface Confirming {
 }
 
 function Approvals() {
-  const { api } = useAuth();
-  const [rows, setRows] = useState<PendingRefund[] | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const api = useApi();
+  const {
+    data: rows,
+    error: loadError,
+    loading,
+    reload,
+    update,
+  } = useLoad((api) => api.pendingRefunds());
   const [notices, setNotices] = useState<Notice[]>([]);
   const [confirming, setConfirming] = useState<Confirming | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
 
-  const [loads, setLoads] = useState(0); // bumped to fetch the list again
-
-  useEffect(() => {
-    let current = true;
-    api
-      .pendingRefunds()
-      .then((list) => current && setRows(list))
-      .catch(
-        (error) =>
-          current &&
-          setLoadError(
-            error instanceof ApiError
-              ? error.message
-              : "Can't reach the server. Check that the backend is running.",
-          ),
-      );
-    return () => {
-      current = false;
-    };
-  }, [api, loads]);
-
-  const reload = () => {
-    setLoadError(null);
-    setLoads((n) => n + 1);
-  };
-
   const say = (tone: Notice["tone"], text: string) =>
     setNotices((all) => [...all, { id: Date.now() + all.length, tone, text }]);
   const remove = (id: number) =>
-    setRows((all) => all?.filter((r) => r.refund_id !== id) ?? null);
+    update((all) => all.filter((r) => r.refund_id !== id));
 
   function ask(refund: PendingRefund, decision: Decision) {
     setConfirmError(null);
@@ -169,7 +149,7 @@ function Approvals() {
         </Alert>
       )}
 
-      {rows === null && !loadError && (
+      {loading && (
         <div
           className="flex flex-col gap-2"
           role="status"

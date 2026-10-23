@@ -6,11 +6,11 @@ import { Suspense, useEffect, useState } from "react";
 import { Composer, MAX_CHARACTERS } from "@/components/composer";
 import { Thread } from "@/components/thread";
 import { useChat } from "@/chat/use-chat";
-import { useAuth } from "@/lib/auth";
+import { useApi } from "@/lib/auth";
 import { useSessions } from "@/lib/sessions";
 
 function Chat() {
-  const { api } = useAuth();
+  const api = useApi();
   const router = useRouter();
   const { refresh } = useSessions();
   // The open chat is in the address (?session=<id>), so the sidebar's links, Back and a reload

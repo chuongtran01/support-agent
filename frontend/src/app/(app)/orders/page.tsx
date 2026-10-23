@@ -1,9 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
 
-import { ApiError } from "@/api/client";
 import type { Order, OrderItem } from "@/api/types";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -19,7 +17,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "cn";
 
-import { useAuth } from "@/lib/auth";
+import { useLoad } from "@/lib/use-load";
 import { formatCents } from "@/lib/money";
 import {
   askAboutOrder,
@@ -125,29 +123,12 @@ function OrderCard({ order }: { order: Order }) {
 }
 
 export default function OrdersPage() {
-  const { api } = useAuth();
-  const [orders, setOrders] = useState<Order[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loads, setLoads] = useState(0); // bumped to fetch the list again
-
-  useEffect(() => {
-    let current = true;
-    api
-      .orders()
-      .then((list) => current && setOrders(list))
-      .catch(
-        (e) =>
-          current &&
-          setError(
-            e instanceof ApiError
-              ? e.message
-              : "Can't reach the server. Check that the backend is running.",
-          ),
-      );
-    return () => {
-      current = false;
-    };
-  }, [api, loads]);
+  const {
+    data: orders,
+    error,
+    loading,
+    reload,
+  } = useLoad((api) => api.orders());
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-4 p-4 pt-8">
@@ -162,21 +143,14 @@ export default function OrdersPage() {
         <Alert variant="destructive">
           <AlertDescription className="flex flex-wrap items-center gap-3">
             <span>{error}</span>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                setError(null);
-                setLoads((n) => n + 1);
-              }}
-            >
+            <Button size="sm" variant="outline" onClick={reload}>
               Try again
             </Button>
           </AlertDescription>
         </Alert>
       )}
 
-      {orders === null && !error && (
+      {loading && (
         <div
           className="flex flex-col gap-3"
           role="status"

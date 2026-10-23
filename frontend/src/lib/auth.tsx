@@ -87,6 +87,12 @@ export function useAuth(): Auth {
   return auth;
 }
 
+/** The backend client. It is made once, with the token and the "401 means signed out" rule
+ *  already wired in, so a page just calls it. */
+export function useApi(): Api {
+  return useAuth().api;
+}
+
 /** Where a signed-in person starts. */
 export function homeFor(profile: Profile): string {
   return profile.role === "approver" ? "/approvals" : "/chat";
