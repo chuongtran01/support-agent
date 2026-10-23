@@ -301,3 +301,31 @@ test("picking a suggestion fills the box, ready to send", async ({ page }) => {
     page.getByRole("heading", { name: "How can I help?" }),
   ).toHaveCount(0); // gone once the chat starts
 });
+
+test("opening the chat asks the backend for each thing once", async ({
+  page,
+}) => {
+  // Run on a production build, so React's development double-run of effects does not count.
+  await mockBackend(page, { ...saved, orders: [DELIVERED_ORDER] });
+  await signIn(page, "Alex Rivera");
+  // let the page we signed in to finish its own requests, so they are not counted
+  await expect(
+    page.getByRole("button", { name: /return the Trail boots/ }),
+  ).toBeVisible();
+  const calls: string[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.origin === "http://localhost:8000")
+      calls.push(`${request.method()} ${url.pathname}`);
+  });
+  await page.reload(); // a fresh load of /chat with the token already stored
+  await expect(
+    page.getByRole("button", {
+      name: "How long do I have to return something?",
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /return the Trail boots/ }),
+  ).toBeVisible();
+  expect(calls.sort()).toEqual(["GET /me", "GET /orders", "GET /sessions"]);
+});

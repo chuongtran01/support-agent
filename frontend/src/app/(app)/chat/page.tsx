@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 
 import { Composer, MAX_CHARACTERS } from "@/components/composer";
 import { Thread } from "@/components/thread";
@@ -21,7 +21,7 @@ function Chat() {
   const [asked] = useState(
     () => params.get("ask")?.slice(0, MAX_CHARACTERS) ?? "",
   );
-  const { state, sessionId, loading, open, isOpen, send } = useChat(api, {
+  const { state, loading, open, isOpen, send } = useChat(api, {
     onCreated: (id) =>
       window.history.replaceState(null, "", `/chat?session=${id}`),
     onGone: () => router.replace("/chat"),
@@ -38,11 +38,13 @@ function Chat() {
     if (!isOpen(requested)) void open(requested);
   }, [requested, isOpen, open]);
 
-  // The sidebar's list changes when a chat starts and when an answer ends (its preview is
-  // the first message).
+  // The sidebar's list changes when an answer ends (a new chat's preview is its first message).
+  // It is not fetched on arrival: the sessions provider already did that.
+  const wasRunning = useRef(false);
   useEffect(() => {
-    if (!running) refresh();
-  }, [running, sessionId, refresh]);
+    if (wasRunning.current && !running) refresh();
+    wasRunning.current = running;
+  }, [running, refresh]);
 
   async function onSend(text: string) {
     setDraft("");
