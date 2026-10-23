@@ -23,7 +23,7 @@ function Row({ own, children }: { own: boolean; children: React.ReactNode }) {
   return (
     <Message align={own ? "end" : "start"}>
       <MessageContent>
-        <Bubble variant={own ? "default" : "muted"}>
+        <Bubble variant={own ? "default" : "ghost"}>
           <BubbleContent className="whitespace-pre-wrap">
             {children}
           </BubbleContent>
