@@ -2,10 +2,13 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 
 import {
+  DELIVERED_ORDER,
   mockBackend,
   openSidebar,
+  REFUNDED_ORDER,
   SESSION_ID,
   SHIPPING,
+  SHIPPED_ORDER,
   signIn,
   TENT_REFUND,
 } from "./backend";
@@ -112,5 +115,15 @@ test("the sidebar and its menu have no accessibility violations", async ({
   await page.getByRole("button", { name: /Taylor Brooks/ }).click();
   await expect(page.getByRole("menuitem", { name: "Log out" })).toBeVisible();
   await page.waitForTimeout(300);
+  expect(await violations(page)).toEqual([]);
+});
+
+test("the orders page has no accessibility violations", async ({ page }) => {
+  await mockBackend(page, {
+    orders: [SHIPPED_ORDER, DELIVERED_ORDER, REFUNDED_ORDER],
+  });
+  await signIn(page, "Alex Rivera");
+  await page.goto("/orders");
+  await expect(page.getByText("Order #14", { exact: true })).toBeVisible();
   expect(await violations(page)).toEqual([]);
 });

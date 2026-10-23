@@ -3,6 +3,7 @@ import type { Page, Route } from "@playwright/test";
 import type {
   Citation,
   Message,
+  Order,
   PendingRefund,
   Profile,
   Session,
@@ -50,6 +51,7 @@ export interface FakeBackend {
   sessions?: Session[];
   messages?: Record<string, Message[]>;
   refunds?: PendingRefund[];
+  orders?: Order[];
   /** The response to a sent message. Defaults to a short cited answer. */
   send?: (route: Route, text: string) => Promise<void> | void;
   /** The response to a decision. Defaults to success. */
@@ -136,6 +138,7 @@ export async function mockBackend(page: Page, fake: FakeBackend = {}) {
         body: ANSWER,
       });
     }
+    if (path === "/orders") return json(route, 200, fake.orders ?? []);
     if (path === "/approvals") return json(route, 200, refunds);
     const decision = path.match(/^\/approvals\/(\d+)\/decision$/);
     if (decision) {
@@ -196,3 +199,61 @@ export async function openSidebar(page: Page) {
   if ((await page.viewportSize())!.width < 768)
     await page.getByRole("button", { name: "Toggle Sidebar" }).first().click();
 }
+
+const BOOTS = {
+  order_item_id: 1,
+  sku: "BOOT-TR",
+  name: "Trail boots",
+  price_cents: 12900,
+  quantity: 1,
+  category: "footwear",
+  is_final_sale: false,
+  units_refunded: 0,
+};
+
+export const DELIVERED_ORDER: Order = {
+  id: 14,
+  status: "delivered",
+  placed_at: "2026-10-01T10:00:00Z",
+  delivered_at: "2026-10-05T10:00:00Z",
+  total_cents: 12900,
+  items: [BOOTS],
+  refunds: [],
+};
+
+export const SHIPPED_ORDER: Order = {
+  ...DELIVERED_ORDER,
+  id: 20,
+  status: "shipped",
+  delivered_at: null,
+  items: [
+    { ...BOOTS, order_item_id: 5, name: "Water bottle", price_cents: 1800 },
+  ],
+  total_cents: 1800,
+};
+
+export const REFUNDED_ORDER: Order = {
+  ...DELIVERED_ORDER,
+  id: 9,
+  items: [
+    {
+      ...BOOTS,
+      order_item_id: 2,
+      name: "Trail socks",
+      price_cents: 1400,
+      quantity: 3,
+      units_refunded: 1,
+    },
+  ],
+  refunds: [
+    {
+      refund_id: 5,
+      order_item_id: 2,
+      quantity: 1,
+      amount_cents: 1400,
+      status: "completed",
+      created_at: "2026-10-07T10:00:00Z",
+    },
+  ],
+  total_cents: 4200,
+};

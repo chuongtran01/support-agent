@@ -3,7 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 
-import { Composer } from "@/components/composer";
+import { Composer, MAX_CHARACTERS } from "@/components/composer";
 import { Thread } from "@/components/thread";
 import { useChat } from "@/chat/use-chat";
 import { useAuth } from "@/lib/auth";
@@ -15,14 +15,23 @@ function Chat() {
   const { refresh } = useSessions();
   // The open chat is in the address (?session=<id>), so the sidebar's links, Back and a reload
   // all open the right one. A chat made by the first message is written there as it is made.
-  const requested = useSearchParams().get("session");
+  const params = useSearchParams();
+  const requested = params.get("session");
+  // "Ask about this" on the orders page opens the chat with a question in the box, to send or edit.
+  const [asked] = useState(
+    () => params.get("ask")?.slice(0, MAX_CHARACTERS) ?? "",
+  );
   const { state, sessionId, loading, open, isOpen, send } = useChat(api, {
     onCreated: (id) =>
       window.history.replaceState(null, "", `/chat?session=${id}`),
     onGone: () => router.replace("/chat"),
   });
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState(asked);
   const running = state.turn !== null;
+
+  useEffect(() => {
+    if (asked) router.replace("/chat"); // the question is in the box now; keep it out of the address
+  }, [asked, router]);
 
   useEffect(() => {
     if (!isOpen(requested)) void open(requested);
@@ -58,6 +67,7 @@ function Chat() {
         onChange={setDraft}
         onSend={(text) => void onSend(text)}
         disabled={running}
+        autoFocus={asked !== ""}
       />
     </div>
   );

@@ -8,6 +8,9 @@ export type LoginResponse = Schemas["LoginResponse"];
 export type Session = Schemas["SessionOut"];
 export type Citation = Schemas["CitationOut"];
 export type Message = Schemas["MessageOut"];
+export type Order = Schemas["OrderView"];
+export type OrderItem = Schemas["OrderItemView"];
+export type OrderRefund = Schemas["RefundView"];
 export type PendingRefund = Schemas["PendingRefund"];
 export type Decision = Schemas["Decision"]["decision"];
 export type DecisionResult = Schemas["DecisionOut"];
@@ -16,7 +19,12 @@ export type DecisionResult = Schemas["DecisionOut"];
 // `sse_frame` in backend/app/api/sse.py by hand.
 export type StreamEvent =
   | { type: "text"; text: string }
-  | { type: "tool"; name: string; phase: "started" | "finished"; status: string | null }
+  | {
+      type: "tool";
+      name: string;
+      phase: "started" | "finished";
+      status: string | null;
+    }
   | {
       type: "done";
       messageId: number;

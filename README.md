@@ -13,6 +13,7 @@ risky refunds, and an eval harness that measures all of it.
 | `backend/app/tools/` | The tools the model can call, their argument models and results |
 | `backend/app/policy/` | The refund policy engine: one pure function |
 | `backend/app/retrieval/` | Chunking, ingestion and hybrid search |
+| `backend/app/orders.py` | A customer's orders with items and refunds, read for both the `lookup_order` tool and `GET /orders` |
 | `backend/app/approvals.py` | The approver's side of refunds: the pending list and deciding (not a tool) |
 | `frontend/` | Next.js chat UI and approval queue |
 | `backend/migrations/` | Alembic migrations for the Postgres schema (pgvector + full-text) |

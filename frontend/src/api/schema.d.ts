@@ -77,6 +77,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Orders
+         * @description The caller's own orders, newest first, with their items and refunds.
+         */
+        get: operations["list_orders_orders_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/approvals": {
         parameters: {
             query?: never;
@@ -209,6 +229,42 @@ export interface components {
              */
             dropped_citations: number;
         };
+        /** OrderItemView */
+        OrderItemView: {
+            /** Order Item Id */
+            order_item_id: number;
+            /** Sku */
+            sku: string;
+            /** Name */
+            name: string;
+            /** Price Cents */
+            price_cents: number;
+            /** Quantity */
+            quantity: number;
+            /** Category */
+            category: string;
+            /** Is Final Sale */
+            is_final_sale: boolean;
+            /** Units Refunded */
+            units_refunded: number;
+        };
+        /** OrderView */
+        OrderView: {
+            /** Id */
+            id: number;
+            /** Status */
+            status: string;
+            /** Placed At */
+            placed_at: string;
+            /** Delivered At */
+            delivered_at: string | null;
+            /** Total Cents */
+            total_cents: number;
+            /** Items */
+            items: components["schemas"]["OrderItemView"][];
+            /** Refunds */
+            refunds: components["schemas"]["RefundView"][];
+        };
         /** PendingRefund */
         PendingRefund: {
             /** Refund Id */
@@ -241,6 +297,21 @@ export interface components {
             role: string;
             /** Membership */
             membership: string;
+        };
+        /** RefundView */
+        RefundView: {
+            /** Refund Id */
+            refund_id: number;
+            /** Order Item Id */
+            order_item_id: number;
+            /** Quantity */
+            quantity: number;
+            /** Amount Cents */
+            amount_cents: number;
+            /** Status */
+            status: string;
+            /** Created At */
+            created_at: string;
         };
         /** SendMessage */
         SendMessage: {
@@ -439,6 +510,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_orders_orders_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderView"][];
                 };
             };
         };

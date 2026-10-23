@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.approvals import router as approvals_router
 from app.api.auth import router as auth_router
 from app.api.chat import router as chat_router
+from app.api.orders import router as orders_router
 from app.config import settings
 from app.db import engine, get_session
 
@@ -28,6 +29,7 @@ app.add_middleware(
 )
 app.include_router(auth_router)
 app.include_router(chat_router)
+app.include_router(orders_router)
 app.include_router(approvals_router)
 
 

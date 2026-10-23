@@ -1,6 +1,6 @@
 "use client";
 
-import { ClipboardCheck, LogOut, SquarePen } from "lucide-react";
+import { ClipboardCheck, LogOut, Package, SquarePen } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { Suspense, useMemo } from "react";
@@ -106,6 +106,17 @@ export function AppSidebar() {
                 >
                   <SquarePen />
                   <span>New chat</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  tooltip="Orders"
+                  isActive={pathname === "/orders"}
+                  render={<Link href="/orders" />}
+                  onClick={closeOnPhone}
+                >
+                  <Package />
+                  <span>Orders</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               {role === "approver" && (

@@ -4,6 +4,7 @@ import type {
   DecisionResult,
   LoginResponse,
   Message,
+  Order,
   PendingRefund,
   Profile,
   Session,
@@ -40,13 +41,20 @@ async function toError(response: Response): Promise<ApiError> {
   if (typeof detail === "string") return new ApiError(response.status, detail);
   if (Array.isArray(detail)) {
     const first = detail[0] as { msg?: string } | undefined;
-    return new ApiError(response.status, first?.msg ?? "The request was not valid.", "invalid");
+    return new ApiError(
+      response.status,
+      first?.msg ?? "The request was not valid.",
+      "invalid",
+    );
   }
   if (typeof detail === "object" && detail !== null) {
     const { code, message } = detail as { code?: string; message?: string };
     return new ApiError(response.status, message ?? response.statusText, code);
   }
-  return new ApiError(response.status, response.statusText || "The request failed.");
+  return new ApiError(
+    response.status,
+    response.statusText || "The request failed.",
+  );
 }
 
 export function createApi({ baseUrl, getToken, onUnauthorized }: ApiOptions) {
@@ -66,7 +74,10 @@ export function createApi({ baseUrl, getToken, onUnauthorized }: ApiOptions) {
     return (await send(path, init)).json() as Promise<T>;
   }
 
-  const post = (body: unknown): RequestInit => ({ method: "POST", body: JSON.stringify(body) });
+  const post = (body: unknown): RequestInit => ({
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 
   return {
     login: (email: string, password: string) =>
@@ -74,7 +85,8 @@ export function createApi({ baseUrl, getToken, onUnauthorized }: ApiOptions) {
     me: () => json<Profile>("/me"),
     listSessions: () => json<Session[]>("/sessions"),
     createSession: () => json<Session>("/sessions", { method: "POST" }),
-    messages: (sessionId: string) => json<Message[]>(`/sessions/${sessionId}/messages`),
+    messages: (sessionId: string) =>
+      json<Message[]>(`/sessions/${sessionId}/messages`),
 
     /** Sends a message and yields the turn's events as they arrive. */
     async *sendMessage(
@@ -82,14 +94,23 @@ export function createApi({ baseUrl, getToken, onUnauthorized }: ApiOptions) {
       text: string,
       signal?: AbortSignal,
     ): AsyncGenerator<StreamEvent> {
-      const response = await send(`/sessions/${sessionId}/messages`, { ...post({ text }), signal });
-      if (!response.body) throw new ApiError(response.status, "The answer had no body.");
+      const response = await send(`/sessions/${sessionId}/messages`, {
+        ...post({ text }),
+        signal,
+      });
+      if (!response.body)
+        throw new ApiError(response.status, "The answer had no body.");
       yield* readEvents(response.body);
     },
 
+    orders: () => json<Order[]>("/orders"),
+
     pendingRefunds: () => json<PendingRefund[]>("/approvals"),
     decide: (refundId: number, decision: Decision) =>
-      json<DecisionResult>(`/approvals/${refundId}/decision`, post({ decision })),
+      json<DecisionResult>(
+        `/approvals/${refundId}/decision`,
+        post({ decision }),
+      ),
   };
 }
 

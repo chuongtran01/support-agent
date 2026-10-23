@@ -14,8 +14,8 @@ from agent_cases import (
 from sqlalchemy import select
 
 from app import models
+from app.orders import COUNTED_STATUSES
 from app.policy.engine import RefundFacts, RefundRequest, evaluate_refund
-from app.tools.orders import COUNTED_STATUSES
 from app.tools.refunds import policy_config
 from tests.tool_world import NOW
 

@@ -278,6 +278,26 @@ describe("ChatPage", () => {
     ).toBeInTheDocument();
   });
 
+  it("opens with a question from the orders page in the box, not sent, and out of the address", async () => {
+    window.history.replaceState(
+      null,
+      "",
+      `/chat?ask=${encodeURIComponent("Where is order #20?")}`,
+    );
+    backend();
+    const box = await open();
+    expect(box).toHaveValue("Where is order #20?");
+    expect(box).toHaveFocus();
+    expect(sent()).toEqual([]);
+    await waitFor(() => expect(window.location.search).toBe(""));
+  });
+
+  it("keeps a question from the address to the length the backend accepts", async () => {
+    window.history.replaceState(null, "", `/chat?ask=${"x".repeat(3000)}`);
+    backend();
+    expect(((await open()) as HTMLTextAreaElement).value).toHaveLength(2000);
+  });
+
   it("starts a new chat when the saved one is gone", async () => {
     window.history.replaceState(null, "", `/chat?session=${SESSION}`);
     backend({ messages: json(404, { detail: "Chat not found" }) });

@@ -14,11 +14,14 @@ export function Composer({
   onChange,
   onSend,
   disabled,
+  autoFocus = false,
 }: {
   value: string;
   onChange: (value: string) => void;
   onSend: (text: string) => void;
   disabled: boolean;
+  /** Put the cursor in the box when it first shows. */
+  autoFocus?: boolean;
 }) {
   const field = useRef<HTMLTextAreaElement>(null);
   const wasDisabled = useRef(disabled);
@@ -66,6 +69,7 @@ export function Composer({
           placeholder="Write a message…"
           aria-label="Message"
           disabled={disabled}
+          autoFocus={autoFocus}
           className="max-h-40 min-h-9 resize-none border-0 bg-transparent px-0 py-1.5 shadow-none focus-visible:border-0 focus-visible:ring-0 disabled:bg-transparent disabled:opacity-100 dark:bg-transparent"
         />
         <Button
