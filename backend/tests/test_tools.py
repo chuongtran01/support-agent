@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app import models
 from app.approvals import decide_refund
 from app.tools.context import ToolContext
-from app.tools.orders import lookup_order
+from app.tools.orders import MAX_LISTED, list_orders, lookup_order
 from app.tools.refunds import issue_refund
 from app.tools.tickets import create_ticket, escalate
 from tests.tool_world import NOW
@@ -30,6 +30,67 @@ async def test_another_customers_order_looks_like_one_that_does_not_exist(world)
     missing = await world.run(lookup_order(world.ctx("alex"), 99999))
     assert foreign == missing
     assert foreign.status == "not_found"
+
+
+# list_orders -----------------------------------------------------------
+
+
+async def test_list_orders_gives_the_customers_own_orders_newest_first(world):
+    result = await world.run(list_orders(world.ctx("alex")))
+    mine = {
+        o.id for o in world.data.orders.values() if o.customer_id == world.ctx("alex").customer_id
+    }
+    assert result.status == "ok"
+    assert {o.id for o in result.orders} == mine
+    placed = [o.placed_at for o in result.orders]
+    assert placed == sorted(placed, reverse=True)
+    assert result.truncated is False
+
+
+async def test_an_order_in_the_list_says_what_is_in_it_and_how_much_is_refunded(world):
+    result = await world.run(list_orders(world.ctx("alex")))
+    socks = next(o for o in result.orders if o.id == world.order("alex-socks"))
+    (item,) = socks.items
+    assert (item.name, item.quantity, item.units_refunded) == ("Trail socks", 3, 1)
+    shipped = next(o for o in result.orders if o.id == world.order("alex-shipped"))
+    assert (shipped.status, shipped.delivered_at) == ("shipped", None)
+
+
+async def test_the_list_leaves_out_the_ids_a_refund_needs(world):
+    result = await world.run(list_orders(world.ctx("alex")))
+    assert "order_item_id" not in result.model_dump_json()
+    assert "refund_id" not in result.model_dump_json()
+
+
+async def test_nobody_elses_orders_are_listed(world):
+    priya = {
+        o.id for o in world.data.orders.values() if o.customer_id == world.ctx("priya").customer_id
+    }
+    result = await world.run(list_orders(world.ctx("alex")))
+    assert priya.isdisjoint({o.id for o in result.orders})
+
+
+async def test_a_customer_with_no_orders_gets_no_orders(world):
+    approver = ToolContext(world.session, world.data.customers["approver"].id)
+    result = await world.run(list_orders(approver))
+    assert (result.status, result.orders, result.truncated) == ("no_orders", [], False)
+
+
+async def test_a_long_list_is_cut_and_says_so(world, monkeypatch):
+    monkeypatch.setattr("app.tools.orders.MAX_LISTED", 3)
+    result = await world.run(list_orders(world.ctx("alex")))
+    assert len(result.orders) == 3
+    assert result.truncated is True
+    newest = sorted(
+        (o for o in world.data.orders.values() if o.customer_id == world.ctx("alex").customer_id),
+        key=lambda o: (o.placed_at, o.id),
+        reverse=True,
+    )
+    assert [o.id for o in result.orders] == [o.id for o in newest[:3]]
+
+
+def test_the_cap_is_large_enough_for_the_demo_customers():
+    assert MAX_LISTED >= 10
 
 
 # issue_refund: each verdict --------------------------------------------

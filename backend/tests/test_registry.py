@@ -33,15 +33,22 @@ async def call(ctx, name, **arguments) -> dict:
 # Schemas ---------------------------------------------------------------
 
 
-def test_the_agent_gets_five_tools_and_not_decide_refund():
+def test_the_agent_gets_six_tools_and_not_decide_refund():
     names = [schema.name for schema in tool_schemas()]
     assert names == [
         "search_knowledge",
+        "list_orders",
         "lookup_order",
         "issue_refund",
         "create_ticket",
         "escalate",
     ]
+
+
+def test_list_orders_takes_no_arguments_at_all():
+    schema = next(t for t in tool_schemas() if t.name == "list_orders")
+    assert schema.parameters["properties"] == {}
+    assert schema.parameters["additionalProperties"] is False
 
 
 def test_no_tool_accepts_a_customer_or_an_amount():
@@ -52,7 +59,7 @@ def test_no_tool_accepts_a_customer_or_an_amount():
 
 
 def test_issue_refund_schema_lists_the_reason_codes_and_requires_every_argument():
-    parameters = tool_schemas()[2].parameters
+    parameters = next(t for t in tool_schemas() if t.name == "issue_refund").parameters
     assert parameters["required"] == ["order_item_id", "quantity", "reason_code"]
     assert parameters["properties"]["reason_code"]["enum"] == list(ReasonCode.__args__)
     assert parameters["properties"]["quantity"]["minimum"] == 1
@@ -169,6 +176,23 @@ async def test_a_tool_that_raises_leaves_nothing_behind(world):
     assert await world.count(models.Ticket) == 0
 
 
+async def test_list_orders_through_dispatch_lists_the_session_customers_orders(world):
+    result = await call(world.ctx("priya"), "list_orders")
+    assert result["status"] == "ok"
+    assert {o["id"] for o in result["orders"]} == {
+        o.id
+        for o in world.data.orders.values()
+        if o.customer_id == world.data.customers["priya"].id
+    }
+
+
+async def test_list_orders_refuses_a_customer_the_model_makes_up(world):
+    result = await call(
+        world.ctx("alex"), "list_orders", customer_id=world.data.customers["priya"].id
+    )
+    assert result["status"] == "invalid_request"
+
+
 async def test_create_ticket_through_dispatch_is_saved_for_the_session_customer(world):
     sam = world.data.customers["sam"].id
     result = await call(world.ctx("sam"), "create_ticket", subject="Zipper", body="It broke.")
@@ -180,6 +204,7 @@ async def test_create_ticket_through_dispatch_is_saved_for_the_session_customer(
 def test_every_tool_in_the_registry_has_a_handler_that_takes_a_context():
     assert set(TOOLS) == {
         "search_knowledge",
+        "list_orders",
         "lookup_order",
         "issue_refund",
         "create_ticket",

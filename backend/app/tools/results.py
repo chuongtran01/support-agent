@@ -59,6 +59,32 @@ class OrderView(View):
     refunds: list[RefundView]
 
 
+class OrderItemSummary(View):
+    name: str
+    quantity: int
+    units_refunded: int
+
+
+class OrderSummary(View):
+    """An order in a list: enough to tell which one the customer means. Not the ids a refund
+    needs; ``lookup_order`` gives those."""
+
+    id: int
+    status: str
+    placed_at: str
+    delivered_at: str | None
+    total_cents: int
+    items: list[OrderItemSummary]
+
+
+class ListOrdersResult(Result):
+    status: Literal["ok", "no_orders"]
+    message: str | None = None
+    orders: list[OrderSummary] = []
+    # True when the customer has more orders than were listed (the newest come first)
+    truncated: bool = False
+
+
 class LookupOrderResult(Result):
     status: Literal["ok", "not_found"]
     message: str | None = None

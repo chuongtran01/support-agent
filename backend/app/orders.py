@@ -12,10 +12,13 @@ COUNTED_STATUSES = ("pending", "approved", "completed")
 
 
 async def orders_for(
-    session: AsyncSession, customer_id: int, order_id: int | None = None
+    session: AsyncSession,
+    customer_id: int,
+    order_id: int | None = None,
+    limit: int | None = None,
 ) -> list[OrderView]:
-    """The customer's orders, newest first, or just one of them. Another customer's order is
-    never returned: it looks the same as one that does not exist."""
+    """The customer's orders, newest first, or just one of them, or only the newest ``limit``.
+    Another customer's order is never returned: it looks the same as one that does not exist."""
     query = select(models.Order).where(models.Order.customer_id == customer_id)
     if order_id is not None:
         query = query.where(models.Order.id == order_id)

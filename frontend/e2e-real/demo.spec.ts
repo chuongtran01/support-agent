@@ -210,9 +210,8 @@ test("7. Jordan has three refunds in 90 days: the next return goes to a person",
   results["7"] = { log };
   await shot(page, "7-jordan");
   expect(log).toMatch(/person|team|review|specialist|follow up/i);
-  expect(log).not.toMatch(
-    /has been made|refund of \$[\d.]+ (has been )?(made|issued)/i,
-  );
+  // no text check that "a refund was made" is absent: "No refund has been made yet" is a correct answer.
+  // The backend state below is the assertion.
   const after = await orderNamed(page, "jordan@example.com", "Camp lantern");
   results["7-api"] = after.refunds;
   expect(after.refunds.map((r) => r.status)).not.toContain("completed");
@@ -248,4 +247,22 @@ test("9. Sam's order is still processing: it cannot be returned yet", async ({
   const after = await orderNamed(page, "sam@example.com", "Two-person tent");
   results["9-api"] = after.refunds;
   expect(after.refunds).toEqual([]);
+});
+
+test("10. Alex returns the jacket without giving an order number: the agent finds the order", async ({
+  page,
+}) => {
+  await signIn(page, "Alex Rivera");
+  const log = await ask(
+    page,
+    "I want to return my down jacket. I changed my mind.",
+  );
+  results["10"] = { log };
+  await shot(page, "10-no-order-number");
+  expect(log).toMatch(/151\.05/);
+  const jacket = await orderNamed(page, "alex@example.com", "Down jacket");
+  results["10-api"] = jacket.refunds;
+  expect(jacket.refunds.map((r) => [r.status, r.amount_cents])).toEqual([
+    ["completed", 15105],
+  ]);
 });

@@ -30,7 +30,7 @@ flowchart TD
     API["FastAPI<br/>Authentication, sessions, streaming"]
     AGENT["Agent loop<br/>OpenAI function calling, no framework"]
     RET["Retrieval<br/>Keyword + vector search, fused, cross-encoder rerank"]
-    TOOLS["Action tools<br/>lookup_order, issue_refund, create_ticket<br/>Scoped to the logged-in customer"]
+    TOOLS["Action tools<br/>list_orders, lookup_order, issue_refund, create_ticket<br/>Scoped to the logged-in customer"]
     POLICY["Policy engine<br/>Rules in code: allowed, needs approval, manual review"]
     PG[("Postgres<br/>pgvector chunks + full-text index<br/>orders, customers, refunds, sessions")]
     CC["Cross-cutting: Langfuse tracing, cost and latency logging, eval harness"]
@@ -97,7 +97,8 @@ The policy engine, not the model, decides whether an action happens. Every tool 
 
 **Tools**
 
-- `lookup_order`: read-only, limited to the session's customer.
+- `list_orders`: read-only, no arguments; the session customer's orders in short, so the agent can find the order a customer means without being given a number.
+- `lookup_order`: read-only, limited to the session's customer; one order in full, with the ids a refund needs.
 - `issue_refund`: checked by the policy engine; over $200 it is saved as `pending` for a human.
 - `create_ticket`: opens a support ticket for the session's customer.
 - `escalate`: hands off to a human when sources conflict or nothing relevant is found.

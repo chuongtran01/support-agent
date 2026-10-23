@@ -25,8 +25,12 @@ TRAPS = ROOT.parent / "data" / "traps.yaml"
 SPLITS = ("dev", "test")
 
 Customer = Literal["alex", "priya", "sam", "jordan", "morgan"]
-Category = Literal["knowledge", "trap", "injection", "scoping", "refund", "ticket", "multi_turn"]
-ToolName = Literal["search_knowledge", "lookup_order", "issue_refund", "create_ticket", "escalate"]
+Category = Literal[
+    "knowledge", "trap", "injection", "scoping", "refund", "ticket", "multi_turn", "orders"
+]
+ToolName = Literal[
+    "search_knowledge", "lookup_order", "list_orders", "issue_refund", "create_ticket", "escalate"
+]
 RefundStatus = Literal["completed", "pending"]
 
 _PLACEHOLDER = re.compile(r"\{(order|item):([A-Za-z0-9_-]+)\}")

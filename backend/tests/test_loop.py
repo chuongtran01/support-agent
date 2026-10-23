@@ -136,6 +136,7 @@ async def test_the_model_gets_the_system_prompt_the_history_and_all_the_tools(wo
     assert sent["messages"] == [UserContent(content="hi")]
     assert [t.name for t in sent["tools"]] == [
         "search_knowledge",
+        "list_orders",
         "lookup_order",
         "issue_refund",
         "create_ticket",

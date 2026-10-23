@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from app.policy.engine import ReasonCode
 from app.tools.context import ToolContext
 from app.tools.knowledge import MAX_QUERY, search_knowledge
-from app.tools.orders import lookup_order
+from app.tools.orders import list_orders, lookup_order
 from app.tools.refunds import issue_refund
 from app.tools.results import Result
 from app.tools.tickets import create_ticket, escalate
@@ -34,6 +34,10 @@ class SearchKnowledgeArguments(Arguments):
         max_length=MAX_QUERY,
         description="What to look up, in plain words. Include the product or topic.",
     )
+
+
+class ListOrdersArguments(Arguments):
+    """Nothing to say: the customer is the one logged in."""
 
 
 class LookupOrderArguments(Arguments):
@@ -73,6 +77,15 @@ TOOLS: dict[str, ToolSpec] = {
             "returns. Each passage carries its document_id, status and date.",
             SearchKnowledgeArguments,
             search_knowledge,
+        ),
+        ToolSpec(
+            "list_orders",
+            "List the customer's own orders, newest first: order number, status, dates, total, "
+            "and the items with how many units are already refunded. Use it when the customer "
+            "has not given an order number, to find the order they mean. It does not give the "
+            "order_item_id a refund needs: call lookup_order on the order for that.",
+            ListOrdersArguments,
+            list_orders,
         ),
         ToolSpec(
             "lookup_order",
