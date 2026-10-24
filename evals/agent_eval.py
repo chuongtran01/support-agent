@@ -2,7 +2,7 @@
 
 Run from ``backend/`` (``make eval-agent``):
 
-    python ../evals/agent_eval.py [--split dev|test] [--only a001 a002 ...] [--repeat N]
+    python ../evals/agent_eval.py [--split dev|test] [--only a001 a002 ...] [--repeat N] [--judge]
 
 Each case starts from freshly seeded customers, orders and refunds (the knowledge base is
 left as ingested), logs in as the case's customer, and sends the messages one after another
@@ -17,7 +17,9 @@ This resets the business tables of the database in DATABASE_URL, as ``make seed`
 import argparse
 import asyncio
 import json
+import math
 import statistics
+import time
 from collections import defaultdict
 from dataclasses import asdict, replace
 from datetime import UTC, datetime
@@ -33,16 +35,19 @@ from agent_checks import (
     TurnRecord,
     check_case,
 )
+from judge import JudgeClient, OpenAIJudge, judge_answer
 from sqlalchemy import select
 
 from app import models
 from app.agent import store
-from app.agent.events import DoneEvent, ErrorEvent
+from app.agent.events import DoneEvent, ErrorEvent, TextEvent, ToolEvent
 from app.agent.loop import AgentDeps, run_turn
 from app.agent.messages import AssistantContent, ToolContent
 from app.agent.openai_client import OpenAIClient
 from app.auth import to_current
+from app.config import settings
 from app.db import SessionLocal, engine
+from app.pricing import cost_usd
 from app.retrieval.embeddings import OpenAIEmbedder
 from app.seed import Seeded, seed
 from app.tracing import get_tracer
@@ -85,6 +90,22 @@ def _tool_runs(messages: list[store.StoredMessage]) -> list[ToolRun]:
     return runs
 
 
+def _sources(messages: list[store.StoredMessage]) -> list[str]:
+    """What search_knowledge returned in a stretch of a chat: the passages the agent was given."""
+    searches = {
+        call.id
+        for m in messages
+        if isinstance(m.content, AssistantContent)
+        for call in m.content.tool_calls
+        if call.function.name == "search_knowledge"
+    }
+    return [
+        m.content.content
+        for m in messages
+        if isinstance(m.content, ToolContent) and m.content.tool_call_id in searches
+    ]
+
+
 async def _play(deps: AgentDeps, seeded: Seeded, case: AgentCase) -> RunRecord:
     orders = {key: order.id for key, order in seeded.orders.items()}
     items = {sku: item.id for sku, item in seeded.items.items()}
@@ -97,11 +118,18 @@ async def _play(deps: AgentDeps, seeded: Seeded, case: AgentCase) -> RunRecord:
     for text in resolve(case.messages, orders, items):
         done: DoneEvent | None = None
         error: str | None = None
+        started = time.perf_counter()
+        first_text: float | None = None
         async for event in run_turn(deps, customer, chat.id, text):
             if isinstance(event, DoneEvent):
                 done = event
             elif isinstance(event, ErrorEvent):
                 error = event.message
+            elif isinstance(event, ToolEvent):
+                first_text = None  # words before a tool call are not the answer
+            elif isinstance(event, TextEvent) and first_text is None:
+                first_text = time.perf_counter() - started
+        seconds = time.perf_counter() - started
         history = await store.load_history(deps.sessions, chat.id, customer.id)
         fresh = history[seen:]
         seen = len(history)
@@ -116,6 +144,10 @@ async def _play(deps: AgentDeps, seeded: Seeded, case: AgentCase) -> RunRecord:
                 prompt_tokens=done.prompt_tokens if done else 0,
                 completion_tokens=done.completion_tokens if done else 0,
                 error=error,
+                question=text,
+                seconds=seconds,
+                first_text_seconds=first_text,
+                sources=_sources(fresh),
             )
         )
         if error:
@@ -129,10 +161,27 @@ async def _play(deps: AgentDeps, seeded: Seeded, case: AgentCase) -> RunRecord:
     )
 
 
-async def run_case(deps: AgentDeps, case: AgentCase) -> tuple[RunRecord, CaseResult]:
+# The judge reads answers that state facts from the knowledge base
+JUDGED_CATEGORIES = ("knowledge", "trap")
+
+
+async def _judged(run: RunRecord, judge: JudgeClient) -> RunRecord:
+    """The run with the judge's verdict on each answer. The verdicts change no check."""
+    turns = [
+        replace(turn, verdict=await judge_answer(judge, turn.question, turn.answer, turn.sources))
+        for turn in run.turns
+    ]
+    return replace(run, turns=turns)
+
+
+async def run_case(
+    deps: AgentDeps, case: AgentCase, judge: JudgeClient | None = None
+) -> tuple[RunRecord, CaseResult]:
     async with SessionLocal.begin() as session:
         seeded = await seed(session)
     run = await _play(deps, seeded, case)
+    if judge and case.category in JUDGED_CATEGORIES:
+        run = await _judged(run, judge)
     orders = {key: order.id for key, order in seeded.orders.items()}
     items = {sku: item.id for sku, item in seeded.items.items()}
     expected = [(t.name, resolve(t.arguments, orders, items)) for t in case.expected_tools]
@@ -141,6 +190,93 @@ async def run_case(deps: AgentDeps, case: AgentCase) -> tuple[RunRecord, CaseRes
 
 def _rate(passed: int, total: int) -> float | None:
     return round(passed / total, 3) if total else None
+
+
+def percentile(values: list[float], q: float) -> float | None:
+    """The value at or below which ``q`` (0 to 1) of the values fall, by nearest rank. With few
+    values the 95th percentile is the largest, which is the honest thing to show."""
+    if not values:
+        return None
+    ordered = sorted(values)
+    return ordered[max(0, math.ceil(q * len(ordered)) - 1)]
+
+
+def _spread(values: list[float]) -> dict:
+    return {
+        "n": len(values),
+        "median": round(statistics.median(values), 2) if values else None,
+        "p95": round(p, 2) if (p := percentile(values, 0.95)) is not None else None,
+    }
+
+
+def latency(cases: list[AgentCase], outcomes: list[tuple[RunRecord, CaseResult]]) -> dict:
+    """Seconds per customer message: the whole turn, and until the answer began. Turns that
+    ended in an error have no answer and are left out of the second."""
+    whole: dict[str, list[float]] = defaultdict(list)
+    first: dict[str, list[float]] = defaultdict(list)
+    for case, (run, _) in zip(cases, outcomes, strict=True):
+        for turn in run.turns:
+            whole[case.category].append(turn.seconds)
+            if turn.first_text_seconds is not None and not turn.error:
+                first[case.category].append(turn.first_text_seconds)
+
+    def pooled(by: dict[str, list[float]]) -> list[float]:
+        return [v for values in by.values() for v in values]
+
+    return {
+        "turn": _spread(pooled(whole)),
+        "first_text": _spread(pooled(first)),
+        "turn_by_category": {name: _spread(v) for name, v in sorted(whole.items())},
+    }
+
+
+def cost(outcomes: list[tuple[RunRecord, CaseResult]]) -> dict:
+    """Dollars for the agent's tokens at the table's price, or None if the model has none. The
+    judge's tokens are counted apart."""
+    per_case = [
+        cost_usd(
+            settings.agent_model,
+            sum(t.prompt_tokens for t in run.turns),
+            sum(t.completion_tokens for t in run.turns),
+        )
+        for run, _ in outcomes
+    ]
+    judged = [t.verdict for run, _ in outcomes for t in run.turns if t.verdict]
+    priced = [c for c in per_case if c is not None]
+    judge_cost = cost_usd(
+        settings.judge_model,
+        sum(v.prompt_tokens for v in judged),
+        sum(v.completion_tokens for v in judged),
+    )
+    return {
+        "model": settings.agent_model,
+        "per_case_usd": round(statistics.mean(priced), 6) if priced else None,
+        "total_usd": round(sum(priced), 4) if priced else None,
+        "judge_model": settings.judge_model,
+        "judge_tokens": sum(v.prompt_tokens + v.completion_tokens for v in judged),
+        "judge_usd": round(judge_cost, 4) if judge_cost is not None else None,
+    }
+
+
+def judging(cases: list[AgentCase], outcomes: list[tuple[RunRecord, CaseResult]]) -> dict:
+    """The judge's verdicts: how many answers it called supported and responsive, and which ones
+    it did not. The run numbers are those of ``case_details``."""
+    judged = []
+    for case, number, (run, _) in zip(cases, run_numbers(cases), outcomes, strict=True):
+        judged += [(case, number, t.verdict) for t in run.turns if t.verdict]
+    unsupported = [f"{c.id} (run {n})" for c, n, v in judged if not v.supported]
+    off_topic = [f"{c.id} (run {n})" for c, n, v in judged if not v.answers_question]
+
+    def rate(flags: list[bool]) -> dict:
+        return {"passed": sum(flags), "total": len(flags), "rate": _rate(sum(flags), len(flags))}
+
+    return {
+        "judged": len(judged),
+        "supported": rate([v.supported for _, _, v in judged]),
+        "answers_question": rate([v.answers_question for _, _, v in judged]),
+        "not_supported": unsupported,
+        "not_answering": off_topic,
+    }
 
 
 def summarize(cases: list[AgentCase], outcomes: list[tuple[RunRecord, CaseResult]]) -> dict:
@@ -177,6 +313,9 @@ def summarize(cases: list[AgentCase], outcomes: list[tuple[RunRecord, CaseResult
         "model_calls_per_case": round(statistics.mean(per_case_calls), 2) if turns else None,
         "tokens_per_case": round(statistics.mean(per_case_tokens)) if turns else None,
         "stability": stability(cases, outcomes),
+        "latency": latency(cases, outcomes),
+        "cost": cost(outcomes),
+        "judge": judging(cases, outcomes),
     }
 
 
@@ -228,6 +367,39 @@ def _percent(entry: dict) -> str:
     return f"{entry['passed']}/{entry['total']}" + (f" ({rate:.0%})" if rate is not None else "")
 
 
+def _seconds(spread: dict) -> str:
+    if spread["median"] is None:
+        return "-"
+    return f"{spread['median']:.1f} median, {spread['p95']:.1f} p95 (n={spread['n']})"
+
+
+def print_latency_and_cost(summary: dict) -> None:
+    seconds, money = summary["latency"], summary["cost"]
+    print("\nSeconds per message")
+    print(f"  whole turn           {_seconds(seconds['turn'])}")
+    print(f"  until the answer     {_seconds(seconds['first_text'])}")
+    for name, spread in seconds["turn_by_category"].items():
+        print(f"  {name:<20} {_seconds(spread)}")
+    if money["per_case_usd"] is None:
+        print(f"\nCost: no price for {money['model']} in app/pricing.py")
+        return
+    print(
+        f"\nCost ({money['model']}, an upper bound): ${money['per_case_usd']:.5f} per case, "
+        f"${money['total_usd']:.4f} in all"
+    )
+
+
+def print_judge(judge: dict) -> None:
+    if not judge["judged"]:
+        return
+    print(f"\nJudge (knowledge and trap answers, {judge['judged']} judged)")
+    print(f"  claims backed by the sources   {_percent(judge['supported'])}")
+    print(f"  answers the question           {_percent(judge['answers_question'])}")
+    for title, key in (("not supported", "not_supported"), ("not answering", "not_answering")):
+        if judge[key]:
+            print(f"  {title}: {', '.join(judge[key])}")
+
+
 def print_report(summary: dict, cases: list[AgentCase], outcomes: list) -> None:
     print(f"\nOverall: {_percent(summary['overall'])}")
     for title, key in (("By category", "by_category"), ("By trap", "by_trap")):
@@ -243,6 +415,8 @@ def print_report(summary: dict, cases: list[AgentCase], outcomes: list) -> None:
     print(f"Cited but not retrieved {summary['dropped_citations']}")
     print(f"Model calls per case    {summary['model_calls_per_case']}")
     print(f"Tokens per case         {summary['tokens_per_case']}")
+    print_latency_and_cost(summary)
+    print_judge(summary["judge"])
     steady = summary["stability"]
     if len(cases) > steady["cases"]:  # some case was run more than once
         print(
@@ -265,7 +439,7 @@ def print_report(summary: dict, cases: list[AgentCase], outcomes: list) -> None:
                 print(f"      {problem}")
 
 
-async def main(split: str, only: list[str] | None, repeat: int) -> None:
+async def main(split: str, only: list[str] | None, repeat: int, judged: bool) -> None:
     cases = load_cases(split)
     if only:
         cases = [c for c in cases if c.id in only]
@@ -274,6 +448,7 @@ async def main(split: str, only: list[str] | None, repeat: int) -> None:
     deps = AgentDeps(
         sessions=SessionLocal, llm=OpenAIClient(), embedder=OpenAIEmbedder(), tracer=tracer
     )
+    judge = OpenAIJudge(settings.openai_api_key, settings.judge_model) if judged else None
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")  # names the result file and the traces
     outcomes = []
     try:
@@ -291,7 +466,7 @@ async def main(split: str, only: list[str] | None, repeat: int) -> None:
                     ["eval", split],
                 ),
             )
-            run, result = await run_case(traced, case)
+            run, result = await run_case(traced, case, judge)
             outcomes.append((run, result))
             name = label(case, run_number, repeat > 1)
             print(f"[{number}/{len(cases)}] {name} {'pass' if result.passed else 'FAIL'}")
@@ -313,7 +488,12 @@ if __name__ == "__main__":
     parser.add_argument("--split", choices=("dev", "test"), default="dev")
     parser.add_argument("--only", nargs="+", help="run just these case ids")
     parser.add_argument("--repeat", type=int, default=1, help="runs of each case (default 1)")
+    parser.add_argument(
+        "--judge",
+        action="store_true",
+        help="have the judge model read the knowledge and trap answers (about 10%% more tokens)",
+    )
     arguments = parser.parse_args()
     if arguments.repeat < 1:
         parser.error("--repeat must be at least 1")
-    asyncio.run(main(arguments.split, arguments.only, arguments.repeat))
+    asyncio.run(main(arguments.split, arguments.only, arguments.repeat, arguments.judge))

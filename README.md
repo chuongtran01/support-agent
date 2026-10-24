@@ -110,9 +110,10 @@ make eval-agent                                  # dev split, one run of each ca
 make eval-agent ARGS="--only a001 a002"          # just these cases
 make eval-agent ARGS="--repeat 3"                # three runs of each case, to see which are flaky
 make eval-agent ARGS="--split test"              # held-out split; do not tune on it
+make eval-agent ARGS="--judge"                   # also have a judge model read the knowledge and trap answers
 ```
 
-Each case is played through the real agent and model on freshly seeded data, and the result is checked in code: tools called, refunds made, text in the answer, citations, and that no other customer's data was touched. It calls the OpenAI API (a dev run is about 160k tokens) and **resets the business tables of the database in `DATABASE_URL`**, as `make seed` does. The report gives pass rates overall, per category and per trap, plus tokens per case, and a JSON file with every run (numbered per case) goes to `evals/results/` (git-ignored). The cases and the recorded baseline are described in `docs/PHASE4.md`.
+Each case is played through the real agent and model on freshly seeded data, and the result is checked in code: tools called, refunds made, text in the answer, citations, and that no other customer's data was touched. It calls the OpenAI API (a dev run is about 160k tokens) and **resets the business tables of the database in `DATABASE_URL`**, as `make seed` does. The report gives pass rates overall, per category and per trap, plus tokens per case, seconds per message (median and 95th percentile, for the whole turn and until the answer begins) and the cost at the price in `backend/app/pricing.py`. With `--judge` it adds how many answers a judge model found backed by the retrieved sources and responsive to the question; the judge does not change any pass or fail. A JSON file with every run (numbered per case) goes to `evals/results/` (git-ignored). The cases and the recorded baseline are described in `docs/PHASE4.md`.
 
 ## Changing the schema
 

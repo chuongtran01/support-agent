@@ -35,3 +35,78 @@ def test_run_numbers_and_labels():
     assert run_numbers(cases) == [1, 2, 1]
     assert label(cases[1], 2, repeated=True) == "a (run 2)"
     assert label(cases[1], 1, repeated=False) == "a"
+
+
+# Latency, cost and the judge's numbers
+
+from agent_checks import TurnRecord
+from agent_eval import cost, judging, latency, percentile
+from judge import Verdict
+
+from app.config import settings
+
+
+def timed(seconds, first=None, error=None, verdict=None, prompt=0, completion=0):
+    turn = TurnRecord(
+        [], "answer", [], 0, 1, prompt, completion, error, "q", seconds, first, [], verdict
+    )
+    return RunRecord([turn], [], [], [], customer_id=1), CaseResult()
+
+
+def test_percentile_takes_the_nearest_rank_and_the_largest_for_a_few_values():
+    assert percentile([], 0.95) is None
+    assert percentile([4.0], 0.95) == 4.0
+    assert percentile([1, 2, 3, 4], 0.5) == 2
+    assert percentile([5, 1, 3], 0.95) == 5  # three values: the 95th percentile is the largest
+    assert percentile(list(range(1, 101)), 0.95) == 95
+
+
+def test_latency_is_per_message_and_by_category_and_skips_turns_with_no_answer():
+    cases = [case(id="a", category="refund"), case(id="b", category="refund"), case(id="c")]
+    cases[2] = case(id="c", category="knowledge")
+    outcomes = [timed(2.0, 1.0), timed(6.0, 3.0), timed(4.0, None, error="down")]
+    spread = latency(cases, outcomes)
+    assert spread["turn"] == {"n": 3, "median": 4.0, "p95": 6.0}
+    assert spread["first_text"] == {"n": 2, "median": 2.0, "p95": 3.0}  # the error turn is out
+    assert spread["turn_by_category"]["refund"] == {"n": 2, "median": 4.0, "p95": 6.0}
+    assert spread["turn_by_category"]["knowledge"]["n"] == 1
+
+
+def test_cost_prices_the_agents_tokens_and_the_judges_apart(monkeypatch):
+    monkeypatch.setattr(settings, "agent_model", "gpt-6-luna")
+    monkeypatch.setattr(settings, "judge_model", "gpt-6-luna")
+    verdict = Verdict(True, True, "fine", 1_000_000, 0)
+    outcomes = [
+        timed(1, prompt=1_000_000, completion=1_000_000, verdict=verdict),
+        timed(1, prompt=0, completion=0),
+    ]
+    money = cost(outcomes)
+    assert money["total_usd"] == 0.6  # $0.10 in and $0.50 out, for one million of each
+    assert money["per_case_usd"] == 0.3
+    assert money["judge_tokens"] == 1_000_000 and money["judge_usd"] == 0.1
+
+
+def test_a_model_with_no_price_gives_no_cost(monkeypatch):
+    monkeypatch.setattr(settings, "agent_model", "some-other-model")
+    monkeypatch.setattr(settings, "judge_model", "some-other-model")
+    money = cost([timed(1, prompt=10, completion=10)])
+    assert money["per_case_usd"] is None and money["total_usd"] is None
+
+
+def test_the_judges_verdicts_are_counted_and_the_failures_named_by_run():
+    cases = [case(id="k1", category="knowledge")] * 2 + [case(id="t1", category="trap")]
+    outcomes = [
+        timed(1, verdict=Verdict(True, True, "", 1, 1)),
+        timed(1, verdict=Verdict(False, True, "invented a number", 1, 1)),
+        timed(1, verdict=Verdict(True, False, "changed the subject", 1, 1)),
+    ]
+    result = judging(cases, outcomes)
+    assert result["judged"] == 3
+    assert (result["supported"]["passed"], result["answers_question"]["passed"]) == (2, 2)
+    assert result["not_supported"] == ["k1 (run 2)"]
+    assert result["not_answering"] == ["t1 (run 1)"]
+
+
+def test_unjudged_runs_are_not_counted():
+    result = judging([case(id="r1")], [timed(1)])
+    assert result["judged"] == 0 and result["supported"]["rate"] is None

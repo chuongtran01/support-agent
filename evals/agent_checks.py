@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from agent_cases import AgentCase, ExpectedRefund
+from judge import Verdict
 
 CheckName = Literal[
     "no_error",
@@ -43,6 +44,11 @@ class TurnRecord:
     prompt_tokens: int
     completion_tokens: int
     error: str | None = None
+    question: str = ""
+    seconds: float = 0.0  # from sending the message to the end of the turn
+    first_text_seconds: float | None = None  # to the first word of the final answer
+    sources: list[str] = field(default_factory=list)  # what search_knowledge returned this turn
+    verdict: Verdict | None = None  # the judge's opinion, if it was asked; no check reads it
 
 
 @dataclass(frozen=True)
