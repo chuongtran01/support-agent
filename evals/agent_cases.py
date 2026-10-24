@@ -26,7 +26,15 @@ SPLITS = ("dev", "test")
 
 Customer = Literal["alex", "priya", "sam", "jordan", "morgan"]
 Category = Literal[
-    "knowledge", "trap", "injection", "scoping", "refund", "ticket", "multi_turn", "orders"
+    "knowledge",
+    "trap",
+    "injection",
+    "off_topic",
+    "scoping",
+    "refund",
+    "ticket",
+    "multi_turn",
+    "orders",
 ]
 ToolName = Literal[
     "search_knowledge", "lookup_order", "list_orders", "issue_refund", "create_ticket", "escalate"

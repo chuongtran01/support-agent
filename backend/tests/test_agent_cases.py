@@ -39,6 +39,7 @@ def test_every_category_is_in_both_splits(splits):
             "knowledge",
             "trap",
             "injection",
+            "off_topic",
             "scoping",
             "refund",
             "ticket",
