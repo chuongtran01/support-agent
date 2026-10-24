@@ -1,4 +1,4 @@
-.PHONY: up down db-reset migrate seed install hooks test lint eval-retrieval eval-agent frontend-install frontend-dev frontend-build frontend-check frontend-e2e frontend-demo api-types api-types-check
+.PHONY: up down db-reset migrate seed install hooks test lint eval-retrieval eval-agent frontend-install frontend-dev frontend-build frontend-check frontend-e2e frontend-demo api-types api-types-check demo-video
 
 up:
 	docker compose up -d db
@@ -55,6 +55,12 @@ frontend-e2e:
 #   cd backend && CORS_ORIGINS=http://localhost:3101 .venv/bin/uvicorn app.main:app --port 8001
 frontend-demo:
 	cd frontend && npm run demo
+
+# The video in docs/media/: run the demo above with DEMO_VIDEO=1 (it records each step), then join the
+# six clips of the demo script into one mp4. Needs ffmpeg.
+demo-video:
+	cd frontend && rm -rf test-results && DEMO_VIDEO=1 npm run demo
+	./scripts/demo-video.sh
 
 # The frontend's API types come from the backend's OpenAPI spec, so they cannot drift.
 api-types:

@@ -82,9 +82,19 @@ model as data, wrapped and labelled, with an instruction not to follow anything 
 
 ## Demo
 
-The demo script runs in a real browser against the real backend and model: a cited answer, a refund
-made at once, a refund held for approval, the approver deciding it, the customer seeing it approved, and
-another customer's order refused. Run it with `make frontend-demo` (see [`docs/PHASE5.md`](docs/PHASE5.md)).
+[**docs/media/demo.mp4**](docs/media/demo.mp4) (37 seconds, no sound) is the demo script in a real browser against the
+real backend and model. Six steps, in order:
+
+1. Alex asks the free-shipping minimum and gets $75 with a source (not the stale $50).
+2. Alex returns boots from the Orders page: the refund is made at once, less the return label fee.
+3. Priya returns a $429 tent: it is over $200, so the refund waits for approval.
+4. The approver sees it on the Approvals page and approves it.
+5. Priya asks about the order and the agent reports it approved.
+6. Alex asks about Priya's order and is told it cannot be found on his account.
+
+`make frontend-demo` runs the script and checks each result in the backend, not only on screen (it needs a
+backend on :8001, see the Makefile); `make demo-video` records it and joins the clips (needs `ffmpeg`).
+The model words its answers a little differently each run. Details are in [`docs/PHASE5.md`](docs/PHASE5.md).
 
 ## Layout
 

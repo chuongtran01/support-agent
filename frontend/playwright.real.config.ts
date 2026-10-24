@@ -14,7 +14,12 @@ export default defineConfig({
   retries: 0,
   timeout: 180_000,
   reporter: "list",
-  use: { baseURL: `http://localhost:${PORT}`, ...devices["Desktop Chrome"] },
+  use: {
+    baseURL: `http://localhost:${PORT}`,
+    ...devices["Desktop Chrome"],
+    // DEMO_VIDEO=1 records each step (one clip per person) to test-results/; `make demo-video` joins them
+    video: process.env.DEMO_VIDEO ? { mode: "on", size: { width: 1280, height: 720 } } : "off",
+  },
   webServer: {
     command: `NEXT_DIST_DIR=.next-demo NEXT_PUBLIC_API_URL=${BACKEND} npm run build && NEXT_DIST_DIR=.next-demo npx next start -p ${PORT}`,
     url: `http://localhost:${PORT}/login`,
