@@ -278,7 +278,7 @@ def get_tracer() -> Tracer:
         client = Langfuse(
             public_key=settings.langfuse_public_key,
             secret_key=settings.langfuse_secret_key,
-            base_url=settings.langfuse_host or None,
+            base_url=settings.langfuse_base_url or None,
         )
     except Exception:
         logger.warning("could not start Langfuse; tracing is off", exc_info=True)

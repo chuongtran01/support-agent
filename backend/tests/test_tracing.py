@@ -207,7 +207,7 @@ def test_both_keys_start_the_langfuse_client_with_the_host(monkeypatch):
     monkeypatch.setattr("langfuse.Langfuse", lambda **kw: made.append(kw) or FakeClient())
     monkeypatch.setattr(tracing.settings, "langfuse_public_key", "pk")
     monkeypatch.setattr(tracing.settings, "langfuse_secret_key", "sk")
-    monkeypatch.setattr(tracing.settings, "langfuse_host", "https://us.cloud.langfuse.com")
+    monkeypatch.setattr(tracing.settings, "langfuse_base_url", "https://us.cloud.langfuse.com")
     get_tracer.cache_clear()
     assert isinstance(get_tracer(), LangfuseTracer)
     assert made == [
@@ -220,7 +220,7 @@ def test_an_empty_host_leaves_the_choice_to_the_sdk(monkeypatch):
     monkeypatch.setattr("langfuse.Langfuse", lambda **kw: made.append(kw) or FakeClient())
     monkeypatch.setattr(tracing.settings, "langfuse_public_key", "pk")
     monkeypatch.setattr(tracing.settings, "langfuse_secret_key", "sk")
-    monkeypatch.setattr(tracing.settings, "langfuse_host", "")
+    monkeypatch.setattr(tracing.settings, "langfuse_base_url", "")
     get_tracer.cache_clear()
     get_tracer()
     assert made[0]["base_url"] is None
