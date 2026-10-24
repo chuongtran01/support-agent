@@ -17,7 +17,7 @@ The product is not expected to change much. Two things may: the retrieval path (
 - [x] **Injection suite**: the injection category grown from 7 cases (5 dev, 2 test) to about 25 (about 15 dev, about 10 test), covering every route an instruction can take in (see below)
 - [x] **Off-topic cases**: a new `off_topic` category in the agent eval (about 6 in dev, 4 in test) for requests that have nothing to do with the store: math, code, poems, trivia. Today no case covers it and the prompt has no rule for it (see below)
 - [x] **Reranker ablation**: keyword, vector, hybrid and hybrid plus reranker on the retrieval eval, then on the agent eval. The reranker ships only if the numbers say so. It did not: it is built, off by default, and the table is below
-- [ ] **Full recorded runs**: dev three times and test once for the final configuration, with the result files described in this file
+- [x] **Full recorded runs**: dev three times and test once for the final configuration, with the result files described in this file. See "Final recorded runs" below
 - [ ] **README and demo**: a results table, an architecture diagram, a short recorded demo of the phase 5 script, and the commands that reproduce each number
 - [ ] **Stretch, only after the above**: router versus single agent, and a τ-bench retail adapter
 
@@ -172,6 +172,31 @@ Cost of the reranker: about 55 ms per search for 20 candidates and 110 ms for 40
 - **It cannot tell a current article from a stale one.** It reads the chunk's words, and a stale article reads almost like the current one. The distractor-first rate rose on both splits (dev 0 to 1 of 3, test 0 to 1 of 1), and in four dev trap questions and one test trap question the right document moved from rank 1 to rank 2 or lower.
 
 On retrieval alone it looked mixed (dev recall@5 +2 questions, test -1; MRR about equal), which is why the agent eval is the number that decides. The sample is small, so "worse" means worse on these cases, not worse everywhere; but nothing here supports turning it on. Left for later, not tried: put the title and status in the text the reranker reads, and widen the cut to 8 chunks. Also seen: the reranker's top score separates answerable from unanswerable questions far better than the vector score does (dev medians 4.2 against -10.7; the vector scores overlap), which could replace `low_confidence_score` if the reranker is ever turned on. The test split was run for retrieval only, not for the agent: the winner is hybrid, which is the baseline.
+### Final recorded runs (2026-10-24, commit `c2ae1eb`)
+
+The final configuration: hybrid search, no reranker, the prompt with the off-topic paragraph, `gpt-6-luna` at `medium` reasoning, judged by the same model at `low`. Dev three times (`evals/results/agent-dev-20261024-145642.json`) and test once (`agent-test-20261024-151040.json`); the result files are git-ignored, so the numbers are copied here. Run with `make eval-agent ARGS="--split dev --repeat 3 --judge"` and `--split test --judge`, with `make seed` before each.
+
+| | Dev, 3 runs of 59 cases | Test, 1 run of 36 cases |
+| --- | --- | --- |
+| Pass rate | 172/177 (97%) | 31/36 (86%) |
+| Injection | 45/45 | 9/10 |
+| Off-topic | 17/18 | 4/4 |
+| Knowledge | 18/21 | 2/4 |
+| Trap | 17/18 | 2/3 |
+| Refund | 45/45 | 10/10 |
+| Orders, scoping, ticket, multi-turn | 30/30 | 4/5 |
+| Tool-call accuracy | 352/354 (99%) | 70/72 (97%) |
+| Refund outcome correct | 177/177 | 36/36 |
+| Tokens per case | 4,715 | 4,598 |
+| Model calls per case | 2.5 | 2.5 |
+| Seconds per message, median / p95 | 3.7 / 6.1 | 3.6 / 6.2 |
+| Seconds until the answer begins, median / p95 | 3.2 / 5.7 | 3.2 / 5.8 |
+| Cost per case (upper bound) | $0.00053 | $0.00051 |
+| Judge: claims backed by sources | 37/39 | 7/7 |
+| Judge: answers the question | 39/39 | 7/7 |
+
+Failures. Dev: a011 (0 of 3, as in every run so far: the shipping price is not in the answer), a012 (2 of 3) and a090 (2 of 3: in one run the agent wrote the function it was asked for, so the off-topic line holds most of the time and not always). a013 passed all three this time (it was 1 of 3 in the baseline), which is the run-to-run noise on the conflict traps. Dev is 172/177 again, the same as the step 3 run. Test: a008 (the shipping-time answer lacks "5 to 7"; it passed in the earlier runs, so this is new and I have not looked at it further), a010, a014 and a023 (known, see above) and a030 (a safe refusal without `lookup_order`). a078 passed this time, though it failed in the step 3 run and nothing changed for it. The judge flagged a012 runs 1 and 2 on dev, the conflict case it is known to flag. Test is 31/36 against 32/36 for the same prompt in step 3, one case apart: the same configuration twice, within the noise. Nothing was tuned on the test split.
+
 - [ ] 5. **README and demo.** Results table, diagram, reproduce commands, recorded demo, a short "what it does not do" section
 - [ ] 6. **Stretch: router versus single agent.** Only if the earlier steps are done. A small router that sends a message to a knowledge agent or an orders agent, against the single agent, on the same cases. The phase 4 addendum already measured that adding `list_orders` to one agent cost 7% more tokens per case, which is the number the router must beat
 - [ ] 7. **Stretch: τ-bench retail adapter.** Only if there is time. Maps the benchmark's tools onto ours and reports the pass rate, with the caveat that its policy is not ours
