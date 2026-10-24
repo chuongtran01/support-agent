@@ -16,9 +16,9 @@ class View(BaseModel):
 class Result(View):
     """What a tool hands back.
 
-    ``receipt`` is for the case where the agent runs out of steps right after this tool changed
-    something: the model gets no turn to explain it, so the loop tells the customer with this
-    sentence instead. Return one plain sentence from the result's own fields if the call
+    ``receipt`` is for the case where the agent runs out of steps, or the model fails, right
+    after this tool changed something: the model gets no turn to explain it, so the loop tells
+    the customer with this sentence instead. Return one plain sentence from the result's own fields if the call
     changed something (a refund made, a ticket opened) and None if it did not. The model never
     sees it, and it is not used when the model writes the final answer.
     """

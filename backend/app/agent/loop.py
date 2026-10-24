@@ -52,6 +52,11 @@ STEP_LIMIT_MESSAGE = (
     "A person will follow up with you."
 )
 MODEL_UNAVAILABLE_MESSAGE = "The assistant is unavailable right now. Please try again in a moment."
+# The model failed after a tool had already changed something, so "try again" alone would hide it
+MODEL_FAILED_AFTER_ACTION_MESSAGE = (
+    "The assistant stopped before it could finish, but part of your request was already done."
+)
+TRY_AGAIN_MESSAGE = "Please try again in a moment for anything else."
 NO_ANSWER_MESSAGE = "The assistant did not produce an answer. Please try again."
 
 
@@ -185,7 +190,16 @@ async def _run_turn(
             logger.exception("model call failed")
             span.fail(str(error))
             trace.finish(MODEL_ERROR)
-            yield ErrorEvent(MODEL_UNAVAILABLE_MESSAGE)
+            message = MODEL_UNAVAILABLE_MESSAGE
+            if receipts:
+                # The tools' own words, as in the step limit: the model gets no turn to explain
+                message = " ".join(
+                    [MODEL_FAILED_AFTER_ACTION_MESSAGE, *receipts, TRY_AGAIN_MESSAGE]
+                )
+                await store.save_message(
+                    deps.sessions, session_id, AssistantContent(content=message)
+                )
+            yield ErrorEvent(message)
             return
         assert reply is not None
         span.finish(

@@ -18,9 +18,11 @@ from app.agent.events import (
 )
 from app.agent.llm import Done, LLMError, TextDelta, ToolCall, Usage
 from app.agent.loop import (
+    MODEL_FAILED_AFTER_ACTION_MESSAGE,
     MODEL_UNAVAILABLE_MESSAGE,
     NO_ANSWER_MESSAGE,
     STEP_LIMIT_MESSAGE,
+    TRY_AGAIN_MESSAGE,
     AgentDeps,
     run_turn,
 )
@@ -438,6 +440,42 @@ async def test_a_model_failure_ends_the_turn_with_an_error_and_keeps_the_questio
     assert events == [ErrorEvent(MODEL_UNAVAILABLE_MESSAGE)]
     stored = await saved(world, "alex", session_id)
     assert [m.role for m in stored] == ["user"]
+
+
+class FailsAfter:
+    """Plays the scripted replies, then fails like a model that has become unavailable."""
+
+    def __init__(self, replies):
+        self._script = ScriptedLLM(replies)
+        self._replies = len(replies)
+
+    async def stream(self, system, messages, tools):
+        if len(self._script.calls) >= self._replies:
+            raise LLMError("rate limited")
+        async for event in self._script.stream(system, messages, tools):
+            yield event
+
+
+async def test_a_model_failure_after_a_refund_still_tells_the_customer_about_the_refund(world):
+    item = world.item_id("BOOT-TR")
+    refund = call("c1", "issue_refund", order_item_id=item, quantity=1, reason_code="changed_mind")
+
+    session_id, events = await world.turn(FailsAfter([call_tools(refund)]), "refund my boots")
+    expected = (
+        f"{MODEL_FAILED_AFTER_ACTION_MESSAGE} A refund of $121.05 has been made. "
+        f"{TRY_AGAIN_MESSAGE}"
+    )
+    assert events[-1] == ErrorEvent(expected)
+    stored = await saved(world, "alex", session_id)
+    assert stored[-1].role == "assistant" and stored[-1].content.content == expected
+    # What was stored still replays to the model: the call has its result, then the message
+    assert [m.role for m in stored] == ["user", "assistant", "tool", "assistant"]
+
+
+async def test_a_model_failure_after_only_reads_does_not_claim_anything_was_done(world):
+    lookup = call("c1", "lookup_order", order_id=world.order_id("alex-5d"))
+    _, events = await world.turn(FailsAfter([call_tools(lookup)]), "where is my order")
+    assert events[-1] == ErrorEvent(MODEL_UNAVAILABLE_MESSAGE)
 
 
 async def test_a_failure_after_some_text_still_ends_with_an_error(world):
