@@ -85,6 +85,7 @@ async def events_from_responses(
     response raises ``LLMError``.
     """
     usage = Usage()
+    model: str | None = None
     async for event in stream:
         match event:
             case ResponseTextDeltaEvent(delta=text) if text:
@@ -95,6 +96,7 @@ async def events_from_responses(
                 ResponseCompletedEvent(response=response)
                 | ResponseIncompleteEvent(response=response)
             ):
+                model = response.model
                 if response.usage:
                     usage = Usage(response.usage.input_tokens, response.usage.output_tokens)
             case ResponseFailedEvent(response=response):
@@ -102,7 +104,7 @@ async def events_from_responses(
                 raise LLMError(error.message if error else "the response failed")
             case ResponseErrorEvent(message=message):
                 raise LLMError(message)
-    yield Done(usage)
+    yield Done(usage, model)
 
 
 class OpenAIClient:

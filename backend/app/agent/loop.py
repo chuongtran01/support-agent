@@ -31,6 +31,17 @@ from app.retrieval.embeddings import Embedder
 from app.tools.context import ToolContext, utc_now
 from app.tools.registry import ToolOutput, run_tool, tool_schemas
 from app.tools.tickets import open_ticket
+from app.tracing import (
+    ANSWERED,
+    FAILED,
+    HANDED_OVER,
+    INTERRUPTED,
+    MODEL_ERROR,
+    NO_ANSWER,
+    ModelSpan,
+    Tracer,
+    TurnTrace,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +64,8 @@ class AgentDeps:
     embedder: Embedder | None = None
     clock: Callable[[], datetime] = utc_now
     max_steps: int = field(default_factory=lambda: settings.agent_max_steps)
+    # Does nothing unless the caller passes one: tests and scripts do not trace by accident
+    tracer: Tracer = field(default_factory=Tracer)
 
 
 @dataclass(frozen=True)
@@ -62,16 +75,19 @@ class _Reply:
     text: str
     tool_calls: list[ToolCall]
     usage: Usage
+    model: str | None = None
 
 
 async def _model_step(
-    deps: AgentDeps, system: str, history: list[MessageContent]
+    deps: AgentDeps, system: str, history: list[MessageContent], span: ModelSpan
 ) -> AsyncIterator[TextEvent | _Reply]:
     """Call the model once. Text goes out as it arrives; the whole reply comes last."""
     text: list[str] = []
     calls: list[ToolCall] = []
     usage = Usage()
+    model: str | None = None
     async for event in deps.llm.stream(system, history, TOOL_SCHEMAS):
+        span.first_output()
         if isinstance(event, TextDelta):
             text.append(event.text)
             yield TextEvent(event.text)
@@ -79,7 +95,8 @@ async def _model_step(
             calls.append(event)
         elif isinstance(event, Done):
             usage = event.usage
-    yield _Reply("".join(text), calls, usage)
+            model = event.model
+    yield _Reply("".join(text), calls, usage, model)
 
 
 async def _run_tool(deps: AgentDeps, customer: CurrentCustomer, call: ToolCall) -> ToolOutput:
@@ -126,6 +143,25 @@ async def run_turn(
     """Handle one customer message. Raises ``SessionNotFound`` before doing anything else if
     the session is not this customer's."""
     stored = await store.load_history(deps.sessions, session_id, customer.id)
+    trace = deps.tracer.start_turn(customer_id=customer.id, session_id=str(session_id), text=text)
+    try:
+        async for event in _run_turn(deps, customer, session_id, text, stored, trace):
+            yield event
+    except Exception:
+        trace.finish(FAILED)
+        raise
+    finally:
+        trace.finish(INTERRUPTED)  # changes nothing if the turn already ended
+
+
+async def _run_turn(
+    deps: AgentDeps,
+    customer: CurrentCustomer,
+    session_id: uuid.UUID,
+    text: str,
+    stored: list[store.StoredMessage],
+    trace: TurnTrace,
+) -> AsyncIterator[TurnEvent]:
     system = build_system_prompt(customer.name, customer.membership, deps.clock().date())
     question = UserContent(content=text)
     await store.save_message(deps.sessions, session_id, question)
@@ -136,30 +172,38 @@ async def run_turn(
     receipts: list[str] = []  # what the tools did, in their own words, for the same case
     model_calls = prompt_tokens = completion_tokens = 0
 
-    for _ in range(deps.max_steps):
+    for step in range(1, deps.max_steps + 1):
         reply: _Reply | None = None
+        span = trace.model_call(step, system, history)
         try:
-            async for item in _model_step(deps, system, history):
+            async for item in _model_step(deps, system, history, span):
                 if isinstance(item, _Reply):
                     reply = item
                 else:
                     yield item
-        except LLMError:
+        except LLMError as error:
             logger.exception("model call failed")
+            span.fail(str(error))
+            trace.finish(MODEL_ERROR)
             yield ErrorEvent(MODEL_UNAVAILABLE_MESSAGE)
             return
         assert reply is not None
+        span.finish(
+            text=reply.text, tool_calls=reply.tool_calls, usage=reply.usage, model=reply.model
+        )
         model_calls += 1
         prompt_tokens += reply.usage.prompt_tokens
         completion_tokens += reply.usage.completion_tokens
 
         if not reply.tool_calls:
             if not reply.text.strip():
+                trace.finish(NO_ANSWER)
                 yield ErrorEvent(NO_ANSWER_MESSAGE)
                 return
             answer = AssistantContent(content=reply.text)
             message_id = await store.save_message(deps.sessions, session_id, answer)
             citations, dropped = check_citations(reply.text, retrieved)
+            trace.finish(ANSWERED, reply.text)
             yield DoneEvent(
                 message_id, citations, dropped, model_calls, prompt_tokens, completion_tokens
             )
@@ -172,7 +216,9 @@ async def run_turn(
         history.append(assistant)
         for call in reply.tool_calls:
             yield ToolEvent(call.name, "started")
+            tool_span = trace.tool_call(call.name, call.arguments)
             output = await _run_tool(deps, customer, call)
+            tool_span.finish(status=output.status, output=output.text)
             calls_made.append(f"{call.name}: {output.status}")
             if output.receipt:
                 receipts.append(output.receipt)
@@ -190,5 +236,6 @@ async def run_turn(
     message_id = await store.save_message(
         deps.sessions, session_id, AssistantContent(content=message)
     )
+    trace.finish(HANDED_OVER, message)
     yield TextEvent(message)
     yield DoneEvent(message_id, (), 0, model_calls, prompt_tokens, completion_tokens)

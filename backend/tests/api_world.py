@@ -11,11 +11,12 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.agent.runner import TurnRunner
-from app.api.deps import get_embedder, get_llm, get_sessionmaker, get_turns
+from app.api.deps import get_embedder, get_llm, get_sessionmaker, get_tracer, get_turns
 from app.auth import create_token
 from app.db import get_session
 from app.main import app
 from app.seed import seed
+from tests.recording_tracer import RecordingTracer
 from tests.scripted_llm import ScriptedLLM
 
 NOW = datetime(2026, 6, 15, 12, 0, tzinfo=UTC)
@@ -33,6 +34,7 @@ class Api:
         self.seeded = seeded
         self.turns = turns
         self.llm = ScriptedLLM([])
+        self.tracer = RecordingTracer()
 
     def headers(self, customer: str) -> dict[str, str]:
         token = create_token(self.seeded.customers[customer].id)
@@ -82,6 +84,7 @@ async def api(session, test_database_url):
     app.dependency_overrides[get_llm] = lambda: holder["api"].llm
     app.dependency_overrides[get_embedder] = lambda: FakeEmbedder()
     app.dependency_overrides[get_turns] = lambda: turns
+    app.dependency_overrides[get_tracer] = lambda: holder["api"].tracer
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:

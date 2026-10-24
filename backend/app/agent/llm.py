@@ -36,9 +36,11 @@ class Usage:
 
 @dataclass(frozen=True)
 class Done:
-    """The last event of every reply."""
+    """The last event of every reply. ``model`` is the one the provider says it used, if it
+    says."""
 
     usage: Usage = field(default_factory=Usage)
+    model: str | None = None
 
 
 LLMEvent = TextDelta | ToolCall | Done

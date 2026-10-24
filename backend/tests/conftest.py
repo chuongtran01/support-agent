@@ -57,3 +57,13 @@ async def session(test_database_url):
     async with engine.begin() as connection:
         await connection.execute(text(f"TRUNCATE {BUSINESS_TABLES}, documents CASCADE"))
     await engine.dispose()
+
+
+@pytest.fixture(autouse=True)
+def no_tracing(monkeypatch):
+    """The developer's .env may hold Langfuse keys; a test must never send a trace."""
+    from app import tracing
+
+    monkeypatch.setattr(settings, "langfuse_public_key", "")
+    monkeypatch.setattr(settings, "langfuse_secret_key", "")
+    tracing.get_tracer.cache_clear()

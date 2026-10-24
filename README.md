@@ -75,6 +75,10 @@ make frontend-e2e       # browser tests with the API mocked (first: cd frontend 
 make frontend-demo      # the demo script against the real backend and model (see docs/PHASE5.md)
 ```
 
+## Tracing
+
+Every turn can be sent to [Langfuse](https://langfuse.com) as one trace: a span for each model call (with tokens, model and time to first token) and each tool call. Put your project's keys and region in `.env` (`LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_HOST`, for example `https://us.cloud.langfuse.com`); with the keys empty nothing is sent and nothing changes. The API traces its turns, and `make eval-agent` traces every case with its id, run number and result-file name as metadata. Traces hold the customers' messages, which is fine for the seeded demo data and not for real customers. Tests never trace.
+
 ## Load the knowledge base
 
 Set `OPENAI_API_KEY` in `.env` (embeddings use `text-embedding-3-small`), then:

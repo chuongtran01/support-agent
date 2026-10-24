@@ -46,9 +46,9 @@ def other_item_event(item_type):
     return ResponseOutputItemDoneEvent.model_construct(item=item_type.model_construct())
 
 
-def completed_event(prompt, completion, event_type=ResponseCompletedEvent):
+def completed_event(prompt, completion, event_type=ResponseCompletedEvent, model=None):
     usage = ResponseUsage.model_construct(input_tokens=prompt, output_tokens=completion)
-    return event_type.model_construct(response=Response.model_construct(usage=usage))
+    return event_type.model_construct(response=Response.model_construct(usage=usage, model=model))
 
 
 async def stream_of(*events):
@@ -67,6 +67,15 @@ async def test_text_arrives_piece_by_piece_then_done_with_usage():
         )
     )
     assert events == [TextDelta("Hel"), TextDelta("lo"), Done(Usage(120, 4))]
+
+
+async def test_done_carries_the_model_the_provider_says_it_used():
+    events = await collect(
+        events_from_responses(
+            stream_of(text_event("Hi"), completed_event(10, 2, model="gpt-6-luna-2026-09-01"))
+        )
+    )
+    assert events[-1] == Done(Usage(10, 2), "gpt-6-luna-2026-09-01")
 
 
 async def test_text_and_calls_come_out_in_the_order_they_were_streamed():

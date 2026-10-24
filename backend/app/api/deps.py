@@ -18,6 +18,8 @@ from app.agent.runner import TurnRunner
 from app.auth import CurrentCustomer, read_token, to_current
 from app.db import SessionLocal, get_session
 from app.retrieval.embeddings import Embedder, OpenAIEmbedder
+from app.tracing import Tracer
+from app.tracing import get_tracer as _get_tracer
 
 _runner = TurnRunner()
 _bearer = HTTPBearer(auto_error=False)
@@ -36,6 +38,10 @@ def get_llm() -> LLMClient:
 @cache
 def get_embedder() -> Embedder:
     return OpenAIEmbedder()
+
+
+def get_tracer() -> Tracer:
+    return _get_tracer()
 
 
 def get_turns() -> TurnRunner:

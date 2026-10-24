@@ -11,10 +11,18 @@ from app.agent import store
 from app.agent.llm import LLMClient
 from app.agent.loop import AgentDeps
 from app.agent.runner import TurnInProgress, TurnRunner
-from app.api.deps import current_customer, get_embedder, get_llm, get_sessionmaker, get_turns
+from app.api.deps import (
+    current_customer,
+    get_embedder,
+    get_llm,
+    get_sessionmaker,
+    get_tracer,
+    get_turns,
+)
 from app.api.sse import frames
 from app.auth import CurrentCustomer
 from app.retrieval.embeddings import Embedder
+from app.tracing import Tracer
 
 MAX_MESSAGE_CHARACTERS = 2000
 MAX_SESSION_MESSAGES = 40
@@ -115,6 +123,7 @@ async def send_message(
     llm: Annotated[LLMClient, Depends(get_llm)],
     embedder: Annotated[Embedder, Depends(get_embedder)],
     turns: Annotated[TurnRunner, Depends(get_turns)],
+    tracer: Annotated[Tracer, Depends(get_tracer)],
 ) -> StreamingResponse:
     """Send a message and stream the turn back as server-sent events."""
     try:
@@ -124,7 +133,9 @@ async def send_message(
     if held >= MAX_SESSION_MESSAGES:
         raise _conflict("chat_full", "This chat is full. Please start a new chat.")
     try:
-        queue = turns.start(AgentDeps(sessions, llm, embedder), customer, session_id, body.text)
+        queue = turns.start(
+            AgentDeps(sessions, llm, embedder, tracer=tracer), customer, session_id, body.text
+        )
     except TurnInProgress:
         raise _conflict("turn_in_progress", "Wait for the answer before sending another.") from None
     return StreamingResponse(

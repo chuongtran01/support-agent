@@ -499,3 +499,13 @@ async def test_the_frontend_origin_may_call_the_api_and_others_may_not(api):
     )
     assert allowed.headers["access-control-allow-origin"] == "http://localhost:3000"
     assert "access-control-allow-origin" not in denied.headers
+
+
+async def test_a_sent_message_is_traced_for_the_caller_and_the_chat(api):
+    api.llm = ScriptedLLM([say("Hello!")])
+    session_id = await api.new_chat()
+    await api.send(session_id, "hi")
+    await api.turns.drain()
+    (turn,) = api.tracer.turns
+    assert (turn.session_id, turn.text, turn.outcome) == (session_id, "hi", "answered")
+    assert turn.customer_id == api.customer_id("alex")

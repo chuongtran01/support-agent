@@ -35,6 +35,8 @@ from app.auth import CurrentCustomer
 from app.retrieval.search import SearchResult
 from app.seed import seed
 from app.tools import knowledge
+from app.tracing import ANSWERED, FAILED, HANDED_OVER, MODEL_ERROR, NO_ANSWER
+from tests.recording_tracer import RecordingTracer
 from tests.scripted_llm import ScriptedLLM, call_tools, say
 
 NOW = datetime(2026, 6, 15, 12, 0, tzinfo=UTC)
@@ -551,3 +553,99 @@ async def test_every_receipt_from_the_last_rounds_is_added_in_order(world):
     message = texts(events)
     assert message.startswith(STEP_LIMIT_MESSAGE)
     assert message.index("support ticket") < message.index("refund of $121.05")
+
+
+# Tracing
+
+
+async def test_a_turn_with_tools_is_traced_step_by_step(world):
+    tracer = RecordingTracer()
+    lookup = call("c1", "lookup_order", order_id=world.order_id("alex-5d"))
+    llm = ScriptedLLM(
+        [
+            [lookup, Done(Usage(100, 10), "model-a")],
+            [TextDelta("It shipped."), Done(Usage(150, 5), "model-a")],
+        ]
+    )
+    session_id, _ = await world.turn(llm, "where is it?", tracer=tracer)
+
+    (turn,) = tracer.turns
+    assert (turn.customer_id, turn.session_id, turn.text) == (
+        world.customers["alex"].id,
+        str(session_id),
+        "where is it?",
+    )
+    first, second = turn.model_calls
+    assert (first.step, second.step) == (1, 2)
+    assert first.system.startswith("You are the customer support agent")
+    assert [m.role for m in second.history] == ["user", "assistant", "tool"]
+    assert first.tool_calls == [lookup] and first.usage == Usage(100, 10)
+    assert (second.text, second.usage, second.model) == ("It shipped.", Usage(150, 5), "model-a")
+    assert first.first_output and second.first_output
+    (tool,) = turn.tool_calls
+    assert (tool.name, tool.status) == ("lookup_order", "ok")
+    assert tool.arguments == lookup.arguments and json.loads(tool.output)["status"] == "ok"
+    assert turn.steps == [first, tool, second]  # in the order they happened
+    assert (turn.outcome, turn.answer) == (ANSWERED, "It shipped.")
+
+
+async def test_tracing_changes_nothing_about_the_turn(world):
+    plain = await world.turn(ScriptedLLM([say("Hello!")]), "hi")
+    traced = await world.turn(ScriptedLLM([say("Hello!")]), "hi", tracer=RecordingTracer())
+    assert [type(e) for e in plain[1]] == [type(e) for e in traced[1]]
+    assert texts(plain[1]) == texts(traced[1])
+
+
+async def test_a_turn_without_a_tracer_runs(world):
+    _, events = await world.turn(ScriptedLLM([say("Hello!")]), "hi")
+    assert isinstance(events[-1], DoneEvent)
+
+
+async def test_a_model_failure_is_traced_as_one(world):
+    class Down:
+        async def stream(self, system, messages, tools):
+            raise LLMError("rate limited")
+            yield
+
+    tracer = RecordingTracer()
+    await world.turn(Down(), "hello", tracer=tracer)
+    (turn,) = tracer.turns
+    assert turn.outcome == MODEL_ERROR and turn.model_calls[0].error == "rate limited"
+
+
+async def test_an_empty_reply_is_traced_as_no_answer(world):
+    tracer = RecordingTracer()
+    await world.turn(ScriptedLLM([[Done()]]), "hello", tracer=tracer)
+    assert tracer.turns[0].outcome == NO_ANSWER
+
+
+async def test_running_out_of_steps_is_traced_as_a_hand_over(world):
+    order_id = world.order_id("alex-5d")
+    forever = [call_tools(call(f"c{i}", "lookup_order", order_id=order_id)) for i in range(2)]
+    tracer = RecordingTracer()
+    await world.turn(ScriptedLLM(forever), "keep looking", max_steps=2, tracer=tracer)
+    (turn,) = tracer.turns
+    assert (turn.outcome, turn.answer) == (HANDED_OVER, STEP_LIMIT_MESSAGE)
+    assert len(turn.model_calls) == 2 and len(turn.tool_calls) == 2
+
+
+async def test_a_bug_ends_the_trace_as_failed_and_still_raises(world):
+    class Broken:
+        async def stream(self, system, messages, tools):
+            raise ZeroDivisionError
+            yield
+
+    tracer = RecordingTracer()
+    with pytest.raises(ZeroDivisionError):
+        await world.turn(Broken(), "hello", tracer=tracer)
+    assert tracer.turns[0].outcome == FAILED
+
+
+async def test_a_session_that_is_not_the_customers_starts_no_trace(world):
+    tracer = RecordingTracer()
+    session_id = await world.chat("priya")
+    with pytest.raises(store.SessionNotFound):
+        await world.turn(
+            ScriptedLLM([]), "hi", customer="alex", session_id=session_id, tracer=tracer
+        )
+    assert tracer.turns == []

@@ -12,11 +12,13 @@ from app.api.chat import router as chat_router
 from app.api.orders import router as orders_router
 from app.config import settings
 from app.db import engine, get_session
+from app.tracing import get_tracer
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     yield
+    get_tracer().flush()
     await engine.dispose()
 
 

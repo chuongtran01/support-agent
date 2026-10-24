@@ -19,7 +19,7 @@ import asyncio
 import json
 import statistics
 from collections import defaultdict
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -45,6 +45,7 @@ from app.auth import to_current
 from app.db import SessionLocal, engine
 from app.retrieval.embeddings import OpenAIEmbedder
 from app.seed import Seeded, seed
+from app.tracing import get_tracer
 
 RESULTS = Path(__file__).resolve().parent / "results"
 
@@ -269,21 +270,38 @@ async def main(split: str, only: list[str] | None, repeat: int) -> None:
     if only:
         cases = [c for c in cases if c.id in only]
     cases = [case for case in cases for _ in range(repeat)]  # a case's runs sit together
-    deps = AgentDeps(sessions=SessionLocal, llm=OpenAIClient(), embedder=OpenAIEmbedder())
+    tracer = get_tracer()  # Langfuse if the keys are set, otherwise nothing
+    deps = AgentDeps(
+        sessions=SessionLocal, llm=OpenAIClient(), embedder=OpenAIEmbedder(), tracer=tracer
+    )
+    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")  # names the result file and the traces
     outcomes = []
     try:
         for number, (case, run_number) in enumerate(zip(cases, run_numbers(cases), strict=True), 1):
-            run, result = await run_case(deps, case)
+            # Each trace says which case and run it is, and which result file holds the verdict
+            traced = replace(
+                deps,
+                tracer=tracer.tagged(
+                    {
+                        "case": case.id,
+                        "category": case.category,
+                        "run": str(run_number),
+                        "eval_run": f"agent-{split}-{stamp}",
+                    },
+                    ["eval", split],
+                ),
+            )
+            run, result = await run_case(traced, case)
             outcomes.append((run, result))
             name = label(case, run_number, repeat > 1)
             print(f"[{number}/{len(cases)}] {name} {'pass' if result.passed else 'FAIL'}")
     finally:
+        tracer.flush()
         await engine.dispose()
 
     summary = summarize(cases, outcomes)
     print_report(summary, cases, outcomes)
     RESULTS.mkdir(exist_ok=True)
-    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     path = RESULTS / f"agent-{split}-{stamp}.json"
     detail = case_details(cases, outcomes)
     path.write_text(json.dumps({"split": split, "summary": summary, "cases": detail}, indent=2))

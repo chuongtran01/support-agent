@@ -17,6 +17,12 @@ class Settings(BaseSettings):
     # search_knowledge flags an answer as shaky when no passage is at least this similar
     low_confidence_score: float = 0.45
 
+    # Tracing to Langfuse. Both keys empty means no tracing. The host is the one for your
+    # project's region, such as https://us.cloud.langfuse.com; empty uses the SDK's default
+    langfuse_public_key: str = ""
+    langfuse_secret_key: str = ""
+    langfuse_host: str = ""
+
     # The default secret is for local development only; set JWT_SECRET anywhere else
     jwt_secret: str = "dev-only-secret-change-me-before-deploying"
     token_ttl_minutes: int = 480
