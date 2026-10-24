@@ -1,6 +1,7 @@
 import re
 
 from app.config import settings
+from app.retrieval.rerank import get_reranker
 from app.retrieval.search import SearchResult, search
 from app.tools.context import ToolContext
 from app.tools.results import PassageView, SearchKnowledgeResult
@@ -44,7 +45,13 @@ async def search_knowledge(ctx: ToolContext, query: str) -> SearchKnowledgeResul
         return SearchKnowledgeResult(
             status="no_results", low_confidence=True, message="Empty query."
         )
-    found = await search(ctx.session, query, mode="hybrid", limit=TOP_K, embedder=ctx.embedder)
+    reranker = get_reranker()
+    if reranker:
+        found = await search(
+            ctx.session, query, "rerank", TOP_K, embedder=ctx.embedder, reranker=reranker
+        )
+    else:
+        found = await search(ctx.session, query, mode="hybrid", limit=TOP_K, embedder=ctx.embedder)
     if not found:
         return SearchKnowledgeResult(
             status="no_results", low_confidence=True, message="No help articles matched."

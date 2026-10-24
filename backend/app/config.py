@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     refund_approval_threshold: int = 200
     # Model calls in one turn before the agent gives up and hands the chat to a person
     agent_max_steps: int = 6
+    # Reorder the search candidates with a local cross-encoder (needs the "rerank" extra)
+    rerank_enabled: bool = False
+    rerank_model: str = "Xenova/ms-marco-MiniLM-L-6-v2"
     # search_knowledge flags an answer as shaky when no passage is at least this similar
     low_confidence_score: float = 0.45
 

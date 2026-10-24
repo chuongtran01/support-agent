@@ -2,7 +2,8 @@
 
 Keyword search ranks with Postgres full-text (``websearch_to_tsquery``, any term may
 match, ranked by ``ts_rank_cd``). Vector search ranks by cosine similarity on the embeddings. Hybrid
-runs both and fuses the two rankings with reciprocal rank fusion (RRF).
+runs both and fuses the two rankings with reciprocal rank fusion (RRF). Rerank is hybrid with
+a cross-encoder reordering the fused candidates (``rerank.py``).
 """
 
 from dataclasses import dataclass, replace
@@ -15,8 +16,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
 from app.retrieval.embeddings import Embedder
+from app.retrieval.rerank import Reranker, rerank_results
 
-Mode = Literal["keyword", "vector", "hybrid"]
+Mode = Literal["keyword", "vector", "hybrid", "rerank"]
 
 RRF_K = 60
 CANDIDATES = 20
@@ -44,6 +46,7 @@ class SearchResult:
     score: float
     keyword_score: float | None = None
     vector_score: float | None = None
+    rerank_score: float | None = None
 
 
 def reciprocal_rank_fusion(rankings: list[list[int]], k: int = RRF_K) -> list[tuple[int, float]]:
@@ -131,10 +134,14 @@ async def search(
     mode: Mode = "hybrid",
     limit: int = 5,
     embedder: Embedder | None = None,
+    reranker: Reranker | None = None,
 ) -> list[SearchResult]:
-    """Return the top ``limit`` chunks for a query. Vector and hybrid modes need an embedder."""
+    """Return the top ``limit`` chunks for a query. Every mode but keyword needs an embedder,
+    and rerank needs a reranker."""
     if mode != "keyword" and embedder is None:
         raise ValueError(f"{mode} search needs an embedder")
+    if mode == "rerank" and reranker is None:
+        raise ValueError("rerank search needs a reranker")
 
     if mode == "keyword":
         return await keyword_search(session, query, limit)
@@ -146,5 +153,8 @@ async def search(
 
     keyword = await keyword_search(session, query)
     vector = await vector_search(session, embedding)
-    # Phase 6: rerank the fused candidates here, before cutting to ``limit``.
-    return fuse_results(keyword, vector)[:limit]
+    fused = fuse_results(keyword, vector)
+    if mode == "rerank":
+        assert reranker is not None
+        fused = await rerank_results(reranker, query, fused)
+    return fused[:limit]

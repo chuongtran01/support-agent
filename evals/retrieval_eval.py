@@ -20,8 +20,10 @@ from typing import get_args
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
+from app.config import settings
 from app.db import SessionLocal, engine
 from app.retrieval.embeddings import OpenAIEmbedder
+from app.retrieval.rerank import CrossEncoderReranker
 from app.retrieval.search import Mode, SearchResult, search
 
 ROOT = Path(__file__).resolve().parent
@@ -215,11 +217,14 @@ async def run(rows: list[EvalRow], modes: list[str]) -> dict[str, list[RowOutcom
     if any(mode != "keyword" for mode in modes):
         questions = [row.question for row in rows]
         embedder = QuestionEmbedder(dict(zip(questions, await OpenAIEmbedder().embed(questions))))
+    reranker = CrossEncoderReranker(settings.rerank_model) if "rerank" in modes else None
     outcomes: dict[str, list[RowOutcome]] = {}
     async with SessionLocal() as session:
         for mode in modes:
             outcomes[mode] = [
-                evaluate_row(row, await search(session, row.question, mode, DEPTH, embedder))
+                evaluate_row(
+                    row, await search(session, row.question, mode, DEPTH, embedder, reranker)
+                )
                 for row in rows
             ]
     return outcomes

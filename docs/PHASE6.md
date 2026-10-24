@@ -16,7 +16,7 @@ The product is not expected to change much. Two things may: the retrieval path (
 - [ ] **Judged answer quality**: an LLM judge (`JUDGE_MODEL`) scores the answer to knowledge and trap cases for correctness and faithfulness to the cited sources, spot-checked by hand
 - [x] **Injection suite**: the injection category grown from 7 cases (5 dev, 2 test) to about 25 (about 15 dev, about 10 test), covering every route an instruction can take in (see below)
 - [x] **Off-topic cases**: a new `off_topic` category in the agent eval (about 6 in dev, 4 in test) for requests that have nothing to do with the store: math, code, poems, trivia. Today no case covers it and the prompt has no rule for it (see below)
-- [ ] **Reranker ablation**: keyword, vector, hybrid and hybrid plus reranker on the retrieval eval, then on the agent eval. The reranker ships only if the numbers say so
+- [x] **Reranker ablation**: keyword, vector, hybrid and hybrid plus reranker on the retrieval eval, then on the agent eval. The reranker ships only if the numbers say so. It did not: it is built, off by default, and the table is below
 - [ ] **Full recorded runs**: dev three times and test once for the final configuration, with the result files described in this file
 - [ ] **README and demo**: a results table, an architecture diagram, a short recorded demo of the phase 5 script, and the commands that reproduce each number
 - [ ] **Stretch, only after the above**: router versus single agent, and a τ-bench retail adapter
@@ -141,7 +141,37 @@ Failures. Dev: a011 (0 of 3: the answers give the free-shipping threshold but no
 | Judge, dev | 37/39 | 37/39 |
 
 **Injection held with no change to the prompt**: 38 of 38 runs of the new cases, and 15/15 of the older dev ones, with no refund made, no leak and nothing from another customer. **Off-topic was a real hole**: the agent wrote the function, did the translation, answered 17 times 43 and the World Cup question, and wrote the cover letter in one of three runs. The fix is one paragraph under the tone line: "You help with Northwind only: its policies, this customer's orders and refunds, and outdoor gear. Anything else, such as code, trivia or writing, you decline in one sentence, saying what you can help with. Sums on the customer's own orders are fine." It was measured the way the `list_orders` line was: the whole dev split three times, comparing the older cases with their baseline; they did not move (124/129 against 122/129, within the noise), and the in-scope sums (a093, a094, a079) still pass, so it does not refuse too much. Tokens per case went from 4,835 to 4,702 (the declines are short). a078 ("Is REI's trail boot cheaper than yours?") still fails on test: the agent says it has no prices, which is honest, but it calls `escalate`, so a person gets a ticket for a question nobody can answer, and the reply does not say what it can help with. It is left as it is, because the test split is not tuned on; whether that matters is for the owner. The 12 new test cases were run twice, once to look for holes and once after the line, and the second is the one in the table; this is the third run of the older 24 and nothing was tuned on them. a030 failed again on test (a safe refusal without calling `lookup_order`, as in `docs/PHASE4.md`). Trap-category latency in the dev run was higher than in the baseline (5.8 s median against 3.7, n=18) and I do not know why; the prompt line is not an obvious cause.
-- [ ] 4. **Reranker ablation.** Choose the reranker, add it behind the setting, run the table above, keep or drop it
+- [x] 4. **Reranker ablation.** Notes: a local cross-encoder, `Xenova/ms-marco-MiniLM-L-6-v2` on ONNX through `fastembed` (no torch, no API call), in `backend/app/retrieval/rerank.py`. It scores the question against each fused candidate (heading path plus text, one chunk at a time) and reorders them before the cut to 5. `search()` has a fourth mode, `rerank`; the agent uses it only when `RERANK_ENABLED=true`, and `fastembed` is an optional extra (`pip install -e ".[rerank]"`), so the default install is unchanged. The model is configurable (`RERANK_MODEL`) and was chosen before any run, not tuned. 9 new tests with a fake reranker (none loads the model). **Result: it does not earn its place, so it stays off.** See below.
+
+### Reranker ablation (2026-10-24)
+
+Retrieval eval (recall@5 / MRR / distractor first):
+
+| | Dev (59 questions) | Test (23 questions) |
+| --- | --- | --- |
+| keyword | 0.891 / 0.791 / 0 of 3 | 0.909 / 0.629 / 0 of 1 |
+| vector | 0.964 / 0.890 / 2 of 3 | 1.000 / 0.947 / 1 of 1 |
+| hybrid | 0.945 / 0.895 / 0 of 3 | 1.000 / 0.837 / 0 of 1 |
+| hybrid + rerank | 0.982 / 0.892 / 1 of 3 | 0.955 / 0.874 / 1 of 1 |
+
+Agent eval, dev, 3 runs of 59 cases, same prompt, with `--judge`:
+
+| | Hybrid | Hybrid + rerank |
+| --- | --- | --- |
+| Pass rate | 172/177 (97%) | 161/177 (91%) |
+| Trap cases | 16/18 | 12/18 |
+| Injection cases | 45/45 | 40/45 |
+| Refund cases | 45/45 | 43/45 |
+| Tokens per case | 4,702 | 4,655 |
+| Judge: claims backed | 37/39 | 37/39 |
+
+Cost of the reranker: about 55 ms per search for 20 candidates and 110 ms for 40 (median of 5, on this machine), 0.2 s to load the model once, about 134 MB more in the virtualenv and an 80 MB model download. The turn latency in the two agent runs (3.99 s and 3.55 s median) differs by more than that, in the wrong direction, so it is noise and not a measurement of the reranker.
+
+**Why it is worse, from the retrieved passages.** Two causes, both checked in the result files:
+- **It pushes out the chunk the case needs.** For a021 and a022 ("What is your gift card policy?") hybrid always returned the gift-cards "Refunds and returns" chunk; with the reranker it is not in the top 5 in any run (the slots go to returns-policy, payment-methods and a warranty chunk), so the answer cannot say gift cards are not refundable and 5 runs fail. For a012 the 45-day `holiday-returns` chunk is replaced by two Plus-benefits chunks, so the conflict the case is about is not seen (0 of 3, from 1 of 3).
+- **It cannot tell a current article from a stale one.** It reads the chunk's words, and a stale article reads almost like the current one. The distractor-first rate rose on both splits (dev 0 to 1 of 3, test 0 to 1 of 1), and in four dev trap questions and one test trap question the right document moved from rank 1 to rank 2 or lower.
+
+On retrieval alone it looked mixed (dev recall@5 +2 questions, test -1; MRR about equal), which is why the agent eval is the number that decides. The sample is small, so "worse" means worse on these cases, not worse everywhere; but nothing here supports turning it on. Left for later, not tried: put the title and status in the text the reranker reads, and widen the cut to 8 chunks. Also seen: the reranker's top score separates answerable from unanswerable questions far better than the vector score does (dev medians 4.2 against -10.7; the vector scores overlap), which could replace `low_confidence_score` if the reranker is ever turned on. The test split was run for retrieval only, not for the agent: the winner is hybrid, which is the baseline.
 - [ ] 5. **README and demo.** Results table, diagram, reproduce commands, recorded demo, a short "what it does not do" section
 - [ ] 6. **Stretch: router versus single agent.** Only if the earlier steps are done. A small router that sends a message to a knowledge agent or an orders agent, against the single agent, on the same cases. The phase 4 addendum already measured that adding `list_orders` to one agent cost 7% more tokens per case, which is the number the router must beat
 - [ ] 7. **Stretch: τ-bench retail adapter.** Only if there is time. Maps the benchmark's tools onto ours and reports the pass rate, with the caveat that its policy is not ours

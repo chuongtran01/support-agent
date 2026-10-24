@@ -153,3 +153,17 @@ async def test_dispatch_runs_it_in_a_real_transaction(session, returns):
     assert reply["status"] == "ok"
     assert reply["passages"][0]["document_id"] == "returns-policy"
     assert not session.in_transaction()
+
+
+async def test_search_is_reranked_when_a_reranker_is_set(monkeypatch):
+    calls = []
+
+    async def fake_search(session, query, mode, limit, embedder, reranker):
+        calls.append({"mode": mode, "reranker": reranker})
+        return [found()]
+
+    reranker = object()
+    monkeypatch.setattr(knowledge, "search", fake_search)
+    monkeypatch.setattr(knowledge, "get_reranker", lambda: reranker)
+    await knowledge.search_knowledge(context(), "question")
+    assert calls == [{"mode": "rerank", "reranker": reranker}]
