@@ -6,7 +6,9 @@ No database transaction is open while the model is being called: every message i
 its own short transaction, and ``dispatch`` gives each tool call one more.
 """
 
+import asyncio
 import logging
+import time
 import uuid
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
@@ -69,6 +71,10 @@ class AgentDeps:
     embedder: Embedder | None = None
     clock: Callable[[], datetime] = utc_now
     max_steps: int = field(default_factory=lambda: settings.agent_max_steps)
+    deadline_seconds: float = field(default_factory=lambda: settings.agent_turn_deadline_seconds)
+    model_retries: int = field(default_factory=lambda: settings.model_retries)
+    retry_delay_seconds: float = field(default_factory=lambda: settings.model_retry_delay_seconds)
+    monotonic: Callable[[], float] = time.monotonic
     # Does nothing unless the caller passes one: tests and scripts do not trace by accident
     tracer: Tracer = field(default_factory=Tracer)
 
@@ -104,6 +110,39 @@ async def _model_step(
     yield _Reply("".join(text), calls, usage, model)
 
 
+async def _model_step_with_retries(
+    deps: AgentDeps, system: str, history: list[MessageContent], trace: TurnTrace, step: int
+) -> AsyncIterator[TextEvent | _Reply]:
+    """``_model_step`` that tries again after a failure. Raises ``LLMError`` if it failed for good.
+
+    A call is tried again only if it had shown the customer no text yet: it changed nothing, and
+    the second try is then invisible. Once text has gone out a second try would repeat it, so the
+    failure stands. Each try is its own span in the trace.
+    """
+    for attempt in range(deps.model_retries + 1):
+        span = trace.model_call(step, system, history)
+        shown = False
+        try:
+            async for item in _model_step(deps, system, history, span):
+                if isinstance(item, _Reply):
+                    span.finish(
+                        text=item.text,
+                        tool_calls=item.tool_calls,
+                        usage=item.usage,
+                        model=item.model,
+                    )
+                    yield item
+                    return
+                shown = True
+                yield item
+        except LLMError as error:
+            span.fail(str(error))
+            if shown or attempt == deps.model_retries:
+                raise
+            logger.warning("model call failed, trying again: %s", error)
+            await asyncio.sleep(deps.retry_delay_seconds)
+
+
 async def _run_tool(deps: AgentDeps, customer: CurrentCustomer, call: ToolCall) -> ToolOutput:
     """Run one tool call as the logged-in customer. The model never supplies who that is."""
     async with deps.sessions() as session:
@@ -127,16 +166,17 @@ async def _hand_over(
     session_id: uuid.UUID,
     customer_text: str,
     calls: list[str],
+    model_calls: int,
 ) -> None:
-    """The agent ran out of steps: open an escalation ticket from code, not from the model."""
+    """The agent ran out of steps or time: open an escalation ticket from code, not from the model."""
     done = "\n".join(f"- {line}" for line in calls) or "- none"
     async with deps.sessions.begin() as session:
         ctx = ToolContext(session, customer.id, deps.clock, deps.embedder)
         await open_ticket(
             ctx,
             "escalation",
-            "The support agent ran out of steps",
-            f"The agent made {deps.max_steps} model calls in one turn without answering "
+            "The support agent ran out of steps or time",
+            f"The agent made {model_calls} model calls in one turn without answering "
             f"(chat {session_id}). The customer's message was:\n\n{customer_text}\n\n"
             f"Tool calls made in this turn:\n{done}",
         )
@@ -176,19 +216,20 @@ async def _run_turn(
     calls_made: list[str] = []  # "name: status", for the ticket if the agent runs out of steps
     receipts: list[str] = []  # what the tools did, in their own words, for the same case
     model_calls = prompt_tokens = completion_tokens = 0
+    started = deps.monotonic()
 
     for step in range(1, deps.max_steps + 1):
+        if deps.monotonic() - started > deps.deadline_seconds:
+            break  # out of time, which is handled like out of steps
         reply: _Reply | None = None
-        span = trace.model_call(step, system, history)
         try:
-            async for item in _model_step(deps, system, history, span):
+            async for item in _model_step_with_retries(deps, system, history, trace, step):
                 if isinstance(item, _Reply):
                     reply = item
                 else:
                     yield item
-        except LLMError as error:
+        except LLMError:
             logger.exception("model call failed")
-            span.fail(str(error))
             trace.finish(MODEL_ERROR)
             message = MODEL_UNAVAILABLE_MESSAGE
             if receipts:
@@ -202,9 +243,6 @@ async def _run_turn(
             yield ErrorEvent(message)
             return
         assert reply is not None
-        span.finish(
-            text=reply.text, tool_calls=reply.tool_calls, usage=reply.usage, model=reply.model
-        )
         model_calls += 1
         prompt_tokens += reply.usage.prompt_tokens
         completion_tokens += reply.usage.completion_tokens
@@ -243,9 +281,9 @@ async def _run_turn(
             history.append(outcome)
             yield ToolEvent(call.name, "finished", output.status)
 
-    # The model is out of steps, but its tools may have changed things in the last round.
+    # The model is out of steps or time, but its tools may have changed things in the last round.
     # The message is written here from the tools' own receipts, never by the model.
-    await _hand_over(deps, customer, session_id, text, calls_made)
+    await _hand_over(deps, customer, session_id, text, calls_made, model_calls)
     message = " ".join([STEP_LIMIT_MESSAGE, *receipts])
     message_id = await store.save_message(
         deps.sessions, session_id, AssistantContent(content=message)

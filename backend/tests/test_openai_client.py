@@ -170,3 +170,9 @@ def test_the_openai_client_needs_a_key(monkeypatch):
     monkeypatch.setattr("app.agent.openai_client.settings.openai_api_key", "")
     with pytest.raises(RuntimeError, match="OPENAI_API_KEY"):
         OpenAIClient()
+
+
+def test_a_call_waits_for_the_next_piece_of_a_reply_only_as_long_as_the_setting(monkeypatch):
+    monkeypatch.setattr("app.agent.openai_client.settings.model_timeout_seconds", 12)
+    timeout = OpenAIClient(api_key="key")._client.timeout
+    assert timeout.read == 12 and timeout.connect == 5

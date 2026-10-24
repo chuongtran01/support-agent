@@ -6,6 +6,7 @@ into ``TextDelta``, ``ToolCall`` and ``Done``.
 
 from collections.abc import AsyncIterator, Sequence
 
+import httpx
 from openai import AsyncOpenAI, OpenAIError
 from openai.types.responses import (
     FunctionToolParam,
@@ -112,7 +113,9 @@ class OpenAIClient:
         api_key = api_key or settings.openai_api_key
         if not api_key:
             raise RuntimeError("OPENAI_API_KEY is not set; add it to .env")
-        self._client = AsyncOpenAI(api_key=api_key)
+        self._client = AsyncOpenAI(
+            api_key=api_key, timeout=httpx.Timeout(settings.model_timeout_seconds, connect=5.0)
+        )
         self._model = model or settings.agent_model
 
     async def stream(

@@ -14,6 +14,13 @@ class Settings(BaseSettings):
     refund_approval_threshold: int = 200
     # Model calls in one turn before the agent gives up and hands the chat to a person
     agent_max_steps: int = 6
+    # A turn does not start another model call after this many seconds; it hands over instead
+    agent_turn_deadline_seconds: float = 120
+    # A model call fails if the next piece of its reply takes longer than this
+    model_timeout_seconds: float = 60
+    # A failed model call that had shown the customer nothing is tried again this many times
+    model_retries: int = 1
+    model_retry_delay_seconds: float = 1.0
     # Reorder the search candidates with a local cross-encoder (needs the "rerank" extra)
     rerank_enabled: bool = False
     rerank_model: str = "Xenova/ms-marco-MiniLM-L-6-v2"

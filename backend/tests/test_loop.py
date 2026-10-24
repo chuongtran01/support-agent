@@ -62,9 +62,9 @@ class World:
         }
 
     def deps(self, llm, **overrides):
-        return AgentDeps(
-            self.sessions, llm, embedder=FakeEmbedder(), clock=lambda: NOW, **overrides
-        )
+        # No waiting between tries of a failed model call
+        settings = {"retry_delay_seconds": 0, **overrides}
+        return AgentDeps(self.sessions, llm, embedder=FakeEmbedder(), clock=lambda: NOW, **settings)
 
     async def chat(self, customer="alex"):
         return (await store.create_session(self.sessions, self.customers[customer].id)).id
@@ -476,6 +476,77 @@ async def test_a_model_failure_after_only_reads_does_not_claim_anything_was_done
     lookup = call("c1", "lookup_order", order_id=world.order_id("alex-5d"))
     _, events = await world.turn(FailsAfter([call_tools(lookup)]), "where is my order")
     assert events[-1] == ErrorEvent(MODEL_UNAVAILABLE_MESSAGE)
+
+
+class Flaky:
+    """Fails a number of calls before showing anything, then plays the scripted replies."""
+
+    def __init__(self, failures, replies, message="rate limited"):
+        self.calls = 0
+        self._failures = failures
+        self._message = message
+        self._script = ScriptedLLM(replies)
+
+    async def stream(self, system, messages, tools):
+        self.calls += 1
+        if self.calls <= self._failures:
+            raise LLMError(self._message)
+        async for event in self._script.stream(system, messages, tools):
+            yield event
+
+
+async def test_a_call_that_failed_before_showing_anything_is_tried_again(world):
+    llm = Flaky(1, [say("Hello!")])
+    tracer = RecordingTracer()
+    _, events = await world.turn(llm, "hi", tracer=tracer)
+    assert texts(events) == "Hello!" and isinstance(events[-1], DoneEvent)
+    assert events[-1].model_calls == 1  # the failed try is not a model call of the turn
+    assert llm.calls == 2
+    (turn,) = tracer.turns
+    assert [c.error for c in turn.model_calls] == ["rate limited", None]
+    assert turn.outcome == ANSWERED
+
+
+async def test_a_call_that_keeps_failing_gives_up_after_the_retries(world):
+    llm = Flaky(99, [])
+    _, events = await world.turn(llm, "hi", model_retries=2)
+    assert events == [ErrorEvent(MODEL_UNAVAILABLE_MESSAGE)]
+    assert llm.calls == 3
+
+
+async def test_no_retries_means_one_try(world):
+    llm = Flaky(1, [say("Hello!")])
+    _, events = await world.turn(llm, "hi", model_retries=0)
+    assert events == [ErrorEvent(MODEL_UNAVAILABLE_MESSAGE)]
+    assert llm.calls == 1
+
+
+async def test_a_call_that_failed_after_text_went_out_is_not_tried_again(world):
+    class Breaks:
+        calls = 0
+
+        async def stream(self, system, messages, tools):
+            self.calls += 1
+            yield TextDelta("Let me")
+            raise LLMError("connection dropped")
+
+    llm = Breaks()
+    _, events = await world.turn(llm, "hi")
+    assert events == [TextEvent("Let me"), ErrorEvent(MODEL_UNAVAILABLE_MESSAGE)]
+    assert llm.calls == 1
+
+
+async def test_a_turn_out_of_time_hands_over_like_a_turn_out_of_steps(world):
+    lookup = call("c1", "lookup_order", order_id=world.order_id("alex-5d"))
+    llm = ScriptedLLM([call_tools(lookup)])
+    clock = iter([0.0, 0.0, 500.0])  # the start, the first check, then far past the deadline
+    _, events = await world.turn(llm, "look", deadline_seconds=120, monotonic=lambda: next(clock))
+    assert len(llm.calls) == 1
+    assert texts(events) == STEP_LIMIT_MESSAGE
+    assert isinstance(events[-1], DoneEvent) and events[-1].model_calls == 1
+    async with world.sessions() as session:
+        ticket = (await session.scalars(select(models.Ticket))).one()
+    assert "made 1 model calls" in ticket.body
 
 
 async def test_a_failure_after_some_text_still_ends_with_an_error(world):
