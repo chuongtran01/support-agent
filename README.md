@@ -4,6 +4,88 @@ A customer support agent for a fictional outdoor-gear retailer. Hybrid retrieval
 messy knowledge base, scoped action tools, a code-level policy engine, human approval for
 risky refunds, and an eval harness that measures all of it.
 
+The agent answers policy questions with citations, looks up a customer's orders, issues refunds
+through a policy engine the model cannot override, holds refunds over $200 for a person, and says
+"I don't know" or hands over when the sources are missing or disagree. There is no agent framework:
+the loop (`backend/app/agent/loop.py`, about 240 lines) calls the OpenAI Responses API directly, so each step can be read and tested.
+
+## Results
+
+Measured with `gpt-6-luna` at `medium` reasoning on the fictional data in this repo. **Dev** is the split the
+prompt and tools were tuned on; **test** was held out and never tuned on (36 cases, one run, so a case or two
+is noise). Every number comes from a command in [Reproduce the numbers](#reproduce-the-numbers), and the
+details and failures are in [`docs/PHASE6.md`](docs/PHASE6.md).
+
+**The agent** (final configuration, 2026-10-24)
+
+| | Dev (59 cases, 3 runs) | Test (36 cases, 1 run) |
+| --- | --- | --- |
+| Pass rate | 172/177 (97%) | 31/36 (86%) |
+| Refund decided correctly | 177/177 | 36/36 |
+| Prompt injection resisted | 45/45 | 9/10 |
+| Off-topic requests declined | 17/18 | 4/4 |
+| Right tools called | 352/354 (99%) | 70/72 (97%) |
+| Seconds per message, median / p95 | 3.7 / 6.1 | 3.6 / 6.2 |
+| Tokens and cost per case | 4,715 tokens, $0.0005 | 4,598 tokens, $0.0005 |
+| Answers backed by the retrieved sources (judge) | 37/39 | 7/7 |
+
+"Pass" means every check in code passed: the tools called, the refund the policy engine made, required and
+forbidden text, citations, and that no other customer's data was touched. The judge is a second opinion from a
+model and changes no pass or fail. Cost is tokens times list price, an upper bound.
+
+**Retrieval** (recall@5 / MRR; the reranker is built but off, see below)
+
+| | Dev (59 questions) | Test (23 questions) |
+| --- | --- | --- |
+| keyword | 0.891 / 0.791 | 0.909 / 0.629 |
+| vector | 0.964 / 0.890 | 1.000 / 0.947 |
+| hybrid (used) | 0.945 / 0.895 | 1.000 / 0.837 |
+| hybrid + cross-encoder rerank | 0.982 / 0.892 | 0.955 / 0.874 |
+
+Two results that are not what the design assumed. **Hybrid search does not beat vector search** on this
+small knowledge base (51 documents); it is the mode the agent uses, and vector alone has equal or better recall@5 on both splits.
+**A reranker made the agent worse**: 161/177 on dev instead of 172/177, because it pushed out the chunk a
+case depended on and cannot tell a current article from a stale one. It stays off (`RERANK_ENABLED`).
+
+**What it does not do well**
+- It does not reliably notice that two current articles disagree: the conflict cases pass 2 of 3 times, and
+  on test the holiday-window conflict (a014) is missed.
+- One shipping-price question (a011) fails every run: it quotes the free-shipping threshold and leaves out the price.
+- The "decline unrelated requests" rule holds most of the time, not always: in one of 18 dev runs it wrote the code it was asked for.
+- Small test split, one model, one machine. Latency includes the network to the model provider.
+
+## Architecture
+
+```mermaid
+flowchart TD
+    UI["Web UI (Next.js)<br/>streaming chat, orders, approval queue"]
+    API["FastAPI<br/>login, sessions, server-sent events"]
+    AGENT["Agent loop<br/>OpenAI Responses API, no framework"]
+    RET["search_knowledge<br/>keyword + vector, fused (RRF)"]
+    TOOLS["Order tools<br/>list_orders, lookup_order, issue_refund,<br/>create_ticket, escalate<br/>scoped to the logged-in customer"]
+    POLICY["Policy engine<br/>one pure function:<br/>allowed, needs approval, denied, manual review"]
+    PG[("Postgres<br/>pgvector chunks and full-text index,<br/>orders, refunds, sessions")]
+    LF["Langfuse<br/>one trace per turn"]
+    EV["Eval harness<br/>retrieval, agent, judge"]
+
+    UI -->|stream| API --> AGENT
+    AGENT --> RET --> PG
+    AGENT --> TOOLS --> POLICY --> PG
+    AGENT -.->|spans| LF
+    EV -.->|plays cases through| AGENT
+```
+
+Rules live in code, not in the prompt. The model picks a tool and its arguments; the customer comes from
+the login, so it cannot name whose data to read. `issue_refund` only passes the request to the policy
+engine, which decides the amount and whether a person must approve. Passages and tool results reach the
+model as data, wrapped and labelled, with an instruction not to follow anything inside them.
+
+## Demo
+
+The demo script runs in a real browser against the real backend and model: a cited answer, a refund
+made at once, a refund held for approval, the approver deciding it, the customer seeing it approved, and
+another customer's order refused. Run it with `make frontend-demo` (see [`docs/PHASE5.md`](docs/PHASE5.md)).
+
 ## Layout
 
 | Path | Purpose |
@@ -96,7 +178,7 @@ Re-running is safe: unchanged files are skipped, and only documents without chun
 ## Run the retrieval eval
 
 ```sh
-make eval-retrieval                              # dev split, keyword, vector and hybrid
+make eval-retrieval                              # dev split, all four modes (rerank needs: pip install -e "backend[rerank]")
 make eval-retrieval ARGS="--modes keyword"       # one mode; keyword needs no API key
 make eval-retrieval ARGS="--split test"          # held-out split; do not tune on it
 ```
@@ -114,6 +196,24 @@ make eval-agent ARGS="--judge"                   # also have a judge model read 
 ```
 
 Each case is played through the real agent and model on freshly seeded data, and the result is checked in code: tools called, refunds made, text in the answer, citations, and that no other customer's data was touched. It calls the OpenAI API (a dev run is about 160k tokens) and **resets the business tables of the database in `DATABASE_URL`**, as `make seed` does. The report gives pass rates overall, per category and per trap, plus tokens per case, seconds per message (median and 95th percentile, for the whole turn and until the answer begins) and the cost at the price in `backend/app/pricing.py`. With `--judge` it adds how many answers a judge model found backed by the retrieved sources and responsive to the question; the judge does not change any pass or fail. A JSON file with every run (numbered per case) goes to `evals/results/` (git-ignored). The cases and the recorded baseline are described in `docs/PHASE4.md`.
+
+## Reproduce the numbers
+
+Each command needs the setup under [Quick start](#quick-start), the knowledge base loaded and `OPENAI_API_KEY`
+set. The agent evals reset the business tables, so run `make seed` after. A dev run of three repeats costs
+about 10 cents.
+
+| Result | Command |
+| --- | --- |
+| Agent, dev, 3 runs, with the judge | `make seed && make eval-agent ARGS="--split dev --repeat 3 --judge"` |
+| Agent, test, 1 run, with the judge | `make seed && make eval-agent ARGS="--split test --judge"` |
+| Retrieval, all four modes | `make eval-retrieval ARGS="--split dev"` and `--split test` |
+| Agent with the reranker on | `RERANK_ENABLED=true make eval-agent ARGS="--split dev --repeat 3"` |
+| Demo in a browser | `make frontend-demo` |
+
+Runs vary: the model answers differently each time, so expect a case or two either way. Result files go
+to `evals/results/` (git-ignored); the numbers above are copied into `docs/PHASE6.md` with the failures.
+Traces of any run show in Langfuse when its keys are set.
 
 ## Changing the schema
 

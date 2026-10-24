@@ -29,7 +29,7 @@ flowchart TD
     UI["Web UI<br/>Next.js: streaming chat and refund approval queue"]
     API["FastAPI<br/>Authentication, sessions, streaming"]
     AGENT["Agent loop<br/>OpenAI function calling, no framework"]
-    RET["Retrieval<br/>Keyword + vector search, fused, cross-encoder rerank"]
+    RET["Retrieval<br/>Keyword + vector search, fused (optional cross-encoder rerank, off)"]
     TOOLS["Action tools<br/>list_orders, lookup_order, issue_refund, create_ticket<br/>Scoped to the logged-in customer"]
     POLICY["Policy engine<br/>Rules in code: allowed, needs approval, manual review"]
     PG[("Postgres<br/>pgvector chunks + full-text index<br/>orders, customers, refunds, sessions")]
@@ -54,8 +54,8 @@ Python for the backend and evals, TypeScript for the frontend, and one Postgres 
 | Agent loop | Hand-written against the OpenAI API | No framework, so every step (retrieve, answer, tool call, escalate) is visible and testable |
 | LLM | OpenAI `gpt-6-luna` for the agent and as judge | Matches most job postings; provider sits behind a thin interface |
 | Embeddings | `text-embedding-3-small` (1536 dims) | Cheap, good enough for a small corpus |
-| Retrieval | Postgres full-text + pgvector, fused, then cross-encoder rerank | Hybrid beats either alone; the ablation proves it |
-| Reranker | Local cross-encoder (e.g. `bge-reranker`) or hosted rerank API | Open decision: CPU latency vs. one more dependency |
+| Retrieval | Postgres full-text + pgvector, fused | The phase 6 ablation found hybrid no better than vector alone on this small corpus; it is kept as the default |
+| Reranker | Local cross-encoder (`ms-marco-MiniLM-L-6-v2` on ONNX), optional and off | Measured in phase 6: it made the agent worse, so it ships off (`RERANK_ENABLED`) |
 | Database | Postgres 16 with pgvector (HNSW index) | One store for chunks, vectors, orders, refunds and sessions |
 | DB access | SQLAlchemy 2.0 (async, psycopg 3) and Alembic | Typed models and versioned migrations; search queries use SQLAlchemy's SQL expressions |
 | Tracing | Langfuse | Per-step traces, cost and latency |
