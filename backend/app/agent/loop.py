@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from app.agent import store
+from app.agent.backends import LocalBackend, ToolBackend
 from app.agent.citations import add_retrieved, check_citations
 from app.agent.events import Citation, DoneEvent, ErrorEvent, TextEvent, ToolEvent, TurnEvent
 from app.agent.llm import Done, LLMClient, LLMError, TextDelta, ToolCall, Usage
@@ -31,7 +32,7 @@ from app.auth import CurrentCustomer
 from app.config import settings
 from app.retrieval.embeddings import Embedder
 from app.tools.context import ToolContext, utc_now
-from app.tools.registry import ToolOutput, run_tool, tool_schemas
+from app.tools.registry import ToolOutput, tool_schemas
 from app.tools.tickets import open_ticket
 from app.tracing import (
     ANSWERED,
@@ -77,6 +78,8 @@ class AgentDeps:
     monotonic: Callable[[], float] = time.monotonic
     # Does nothing unless the caller passes one: tests and scripts do not trace by accident
     tracer: Tracer = field(default_factory=Tracer)
+    # Where tool calls run. None runs them in this process
+    tools: ToolBackend | None = None
 
 
 @dataclass(frozen=True)
@@ -144,10 +147,9 @@ async def _model_step_with_retries(
 
 
 async def _run_tool(deps: AgentDeps, customer: CurrentCustomer, call: ToolCall) -> ToolOutput:
-    """Run one tool call as the logged-in customer. The model never supplies who that is."""
-    async with deps.sessions() as session:
-        ctx = ToolContext(session, customer.id, deps.clock, deps.embedder)
-        return await run_tool(ctx, call.name, call.arguments)
+    """Run one tool call as the logged-in customer, on the deps' backend or in this process."""
+    tools = deps.tools or LocalBackend(deps.sessions, deps.embedder, deps.clock)
+    return await tools.run(customer, call)
 
 
 def _assistant_content(reply: _Reply) -> AssistantContent:
