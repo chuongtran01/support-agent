@@ -19,7 +19,7 @@ By the end, a person can start `make mcp` and the API with `TOOL_BACKEND=mcp`, s
 - [x] **`McpBackend`**: runs a call through the MCP server as the customer, and returns the `ToolOutput` the server's result maps back to
 - [x] **Loop**: `AgentDeps` takes an optional backend; the loop uses it, and builds a `LocalBackend` from the deps it already has when there is none
 - [x] **API**: the chat endpoint picks the backend from the setting
-- [ ] **Tests**: the loop's tool cases on both backends, the backend itself against the real app and real tokens, and the choice made by the setting
+- [x] **Tests**: the loop's tool cases on both backends, the backend itself against the real app and real tokens, and the choice made by the setting
 - [ ] **End-to-end check**: one real chat turn through the API with `TOOL_BACKEND=mcp`, written up under "Gate check"
 
 ## What the earlier phases already give

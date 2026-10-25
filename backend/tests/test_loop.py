@@ -38,6 +38,7 @@ from app.retrieval.search import SearchResult
 from app.seed import seed
 from app.tools import knowledge
 from app.tracing import ANSWERED, FAILED, HANDED_OVER, MODEL_ERROR, NO_ANSWER
+from tests.mcp_app import mcp_backend
 from tests.recording_tracer import RecordingTracer
 from tests.scripted_llm import ScriptedLLM, call_tools, say
 
@@ -50,7 +51,8 @@ class FakeEmbedder:
 
 
 class World:
-    def __init__(self, engine, sessions, seeded):
+    def __init__(self, engine, sessions, seeded, backend="local"):
+        self.backend = backend
         self.engine = engine
         self.sessions = sessions
         self.seeded = seeded
@@ -64,7 +66,13 @@ class World:
     def deps(self, llm, **overrides):
         # No waiting between tries of a failed model call
         settings = {"retry_delay_seconds": 0, **overrides}
-        return AgentDeps(self.sessions, llm, embedder=FakeEmbedder(), clock=lambda: NOW, **settings)
+        embedder = FakeEmbedder()
+        tools = None  # the loop runs the tools in this process
+        if self.backend == "mcp":
+            tools = mcp_backend(self.sessions, embedder=embedder, clock=lambda: NOW)
+        return AgentDeps(
+            self.sessions, llm, embedder=embedder, clock=lambda: NOW, tools=tools, **settings
+        )
 
     async def chat(self, customer="alex"):
         return (await store.create_session(self.sessions, self.customers[customer].id)).id
@@ -87,12 +95,15 @@ class World:
             return await session.scalar(select(func.count()).select_from(model))
 
 
-@pytest_asyncio.fixture
-async def world(session, test_database_url):
+@pytest_asyncio.fixture(params=["local", "mcp"])
+async def world(request, session, test_database_url):
+    """Every test in this file runs twice: tools in this process, and tools through the MCP
+    server. The loop must behave the same on both."""
     async with session.begin():
         seeded = await seed(session, NOW, "demo")
     engine = create_async_engine(test_database_url)
-    world = World(engine, async_sessionmaker(engine, expire_on_commit=False), seeded)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    world = World(engine, sessions, seeded, request.param)
     yield world
     await engine.dispose()
 
