@@ -1,5 +1,6 @@
 from typing import Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -52,6 +53,9 @@ class Settings(BaseSettings):
     mcp_host: str = "127.0.0.1"
     mcp_port: int = 8765
     mcp_server_url: str = "http://localhost:8765/mcp"
+    # The most one tool call over MCP may take, connecting included. A call that runs out of it
+    # after being sent is reported as unknown, not as failed
+    mcp_call_timeout_seconds: float = Field(default=30, gt=0)
 
     @property
     def cors_origin_list(self) -> list[str]:

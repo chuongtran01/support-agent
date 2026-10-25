@@ -28,3 +28,23 @@ def test_any_other_tool_backend_is_refused(monkeypatch, backend):
 
     with pytest.raises(ValidationError, match="tool_backend"):
         settings()
+
+
+def test_a_tool_call_over_mcp_has_thirty_seconds_by_default(monkeypatch):
+    monkeypatch.delenv("MCP_CALL_TIMEOUT_SECONDS", raising=False)
+
+    assert settings().mcp_call_timeout_seconds == 30
+
+
+def test_the_call_timeout_can_be_set_from_the_environment(monkeypatch):
+    monkeypatch.setenv("MCP_CALL_TIMEOUT_SECONDS", "2.5")
+
+    assert settings().mcp_call_timeout_seconds == 2.5
+
+
+@pytest.mark.parametrize("seconds", ["0", "-1", "soon"])
+def test_a_call_timeout_that_is_not_a_positive_number_is_refused(monkeypatch, seconds):
+    monkeypatch.setenv("MCP_CALL_TIMEOUT_SECONDS", seconds)
+
+    with pytest.raises(ValidationError, match="mcp_call_timeout_seconds"):
+        settings()
