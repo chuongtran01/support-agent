@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -41,6 +43,9 @@ class Settings(BaseSettings):
     # Every seeded demo customer logs in with this
     seed_password: str = "demo"
 
+    # Where the agent runs its tool calls: "local" in this process, or "mcp" through the MCP tool
+    # server at MCP_SERVER_URL (start it with `make mcp`)
+    tool_backend: Literal["local", "mcp"] = "local"
     # The MCP tool server (python -m app.mcp_server). The client uses the URL; the server the rest.
     # It listens on this machine only unless MCP_HOST says otherwise, and then it will not start
     # on the default JWT secret
