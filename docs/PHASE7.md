@@ -1,6 +1,6 @@
 # Phase 7: MCP tool server
 
-**Status:** planned
+**Status:** done
 **Gate:** tool tests and identity checks pass through the protocol; Claude Code can call the server
 
 This is phase 1 of `MCP_DESIGN.md`. The design says what the whole change is and why; this file says how the server is built.
@@ -20,7 +20,7 @@ By the end, a person can start the server with `make mcp`, connect Claude Code t
 - [x] **Settings**: `MCP_HOST`, `MCP_PORT` and, for later, `MCP_SERVER_URL`, all in `.env.example`
 - [x] **Make target**: `make mcp`
 - [x] **Tests**: the existing tool cases run through the in-memory transport, plus the identity, schema and receipt checks below
-- [ ] **Claude Code check**: the server connected to Claude Code, with a lookup and a refund done by hand, written up under "Gate check"
+- [x] **Claude Code check**: the server connected to Claude Code, with a lookup and a refund done by hand, written up under "Gate check"
 
 ## What the earlier phases already give
 
@@ -146,13 +146,19 @@ Because the SDK's major version moved once already, `server.py` and `mapping.py`
 
 ## Gate check
 
+Run on 2026-10-25.
+
 | Check | Result |
 | --- | --- |
-| `pytest` | All tests pass, old and new |
-| `ruff check` | Clean |
-| Tool list | Six tools, none for approvals |
-| Identity checks | The four bad tokens are refused |
-| Claude Code | `claude mcp add` with the server URL and a token from `/auth/login`; a lookup and a refund made by hand give the same answers as the API |
+| `pytest` | 613 passed |
+| `ruff check` and `ruff format --check` | Clean |
+| Tool list | Six tools, none for approvals (`test_it_lists_the_registry_tools_and_only_those`) |
+| Identity checks | Six kinds of bad token each get a 401: no header, a non-bearer header, garbage, a token signed with another secret, an expired token, and a customer that does not exist. A token that goes bad mid-session stops the calls |
+| Through the protocol | 25 tool cases give the same status, receipt, body and database changes straight into `run_tool` and through the server (50 runs). Breaking the receipt mapping made exactly the three MCP receipt cases fail |
+| Real process | `make mcp` started on `127.0.0.1:8765`. No token: 401 with `WWW-Authenticate: Bearer`. Alex's token over a real socket: six tools listed, `list_orders` ok, an extra `customer_id` argument gave `invalid_request` |
+| Claude Code | A separate `claude -p` process (2.1.310) was given the server and Alex's token in a config file (`--mcp-config`, `--strict-mcp-config`). It reported the server `connected` with the six `mcp__northwind__*` tools, called `lookup_order` for order 1, then `issue_refund` for its item: `allowed`, `amount_cents` 12105, "$121.05 after the $7.95 return label fee", the same as the direct tests give. The refund (id 9) was removed afterwards, so the dev database is as it was |
+
+What was not done: `claude mcp add` was not run, so Claude Code's saved configuration is untouched (`claude mcp add --transport http <name> <url> --header "Authorization: Bearer <token>"` is the form its help shows). The refund was compared with the tool tests' expected result, not with the API's own endpoints.
 
 ## Decisions to confirm
 
