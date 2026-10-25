@@ -41,6 +41,13 @@ class Settings(BaseSettings):
     # Every seeded demo customer logs in with this
     seed_password: str = "demo"
 
+    # The MCP tool server (python -m app.mcp_server). The client uses the URL; the server the rest.
+    # It listens on this machine only unless MCP_HOST says otherwise, and then it will not start
+    # on the default JWT secret
+    mcp_host: str = "127.0.0.1"
+    mcp_port: int = 8765
+    mcp_server_url: str = "http://localhost:8765/mcp"
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

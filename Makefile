@@ -1,4 +1,4 @@
-.PHONY: up down db-reset migrate seed install hooks test lint eval-retrieval eval-agent frontend-install frontend-dev frontend-build frontend-check frontend-e2e frontend-demo api-types api-types-check demo-video
+.PHONY: up down db-reset migrate seed install hooks test lint mcp eval-retrieval eval-agent frontend-install frontend-dev frontend-build frontend-check frontend-e2e frontend-demo api-types api-types-check demo-video
 
 up:
 	docker compose up -d db
@@ -27,6 +27,10 @@ test:
 
 lint:
 	cd backend && .venv/bin/ruff check .
+
+# The MCP tool server on MCP_PORT, next to the API. Needs the database (make up)
+mcp:
+	cd backend && .venv/bin/python -m app.mcp_server
 
 eval-retrieval:
 	cd backend && .venv/bin/python ../evals/retrieval_eval.py $(ARGS)

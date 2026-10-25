@@ -15,13 +15,13 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.auth import ALGORITHM, create_token
 from app.mcp_server.auth import bearer_token, make_authenticate
 from app.mcp_server.mapping import STATUS_KEY
-from app.mcp_server.server import create_app
+from app.mcp_server.server import MCP_PATH, create_app
 from app.tools.registry import TOOLS
 from tests.tool_world import NOW
 
 # A port is needed: on localhost the app only accepts a Host header that has one
 BASE = "http://localhost:8765"
-URL = f"{BASE}/mcp"
+URL = f"{BASE}{MCP_PATH}"
 MCP_HEADERS = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}
 LIST_TOOLS = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
 OTHER_SECRET = "a-different-secret-of-32-bytes!!"

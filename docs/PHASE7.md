@@ -13,12 +13,12 @@ By the end, a person can start the server with `make mcp`, connect Claude Code t
 
 ## Deliverables
 
-- [ ] **Server**: `backend/app/mcp_server/`, run with `python -m app.mcp_server`, serving every entry of `registry.TOOLS` over Streamable HTTP
+- [x] **Server**: `backend/app/mcp_server/`, run with `python -m app.mcp_server`, serving every entry of `registry.TOOLS` over Streamable HTTP
 - [x] **Authentication**: a bearer token is required on every request, resolved to a customer with `read_token`; a missing, malformed or expired token is refused
 - [x] **Result mapping**: `ToolOutput.text` as the result's text content, byte for byte; `status` and `receipt` in `_meta`; `isError` for `invalid_request` and `error`
-- [ ] **Server-owned context**: its own DB pool, embedder and clock; the clock is injectable so tests can fix the date
-- [ ] **Settings**: `MCP_PORT` and, for later, `MCP_SERVER_URL`; both in `.env.example`
-- [ ] **Make target**: `make mcp`
+- [x] **Server-owned context**: its own DB pool, embedder and clock; the clock is injectable so tests can fix the date
+- [x] **Settings**: `MCP_HOST`, `MCP_PORT` and, for later, `MCP_SERVER_URL`, all in `.env.example`
+- [x] **Make target**: `make mcp`
 - [ ] **Tests**: the existing tool cases run through the in-memory transport, plus the identity, schema and receipt checks below
 - [ ] **Claude Code check**: the server connected to Claude Code, with a lookup and a refund done by hand, written up under "Gate check"
 
@@ -92,6 +92,7 @@ Each call builds a fresh `ToolContext`:
 
 | Setting | Default | Used by |
 | --- | --- | --- |
+| `MCP_HOST` | `127.0.0.1` | The server: the address it listens on. Anything but this machine needs a real `JWT_SECRET` |
 | `MCP_PORT` | `8765` | The server |
 | `MCP_SERVER_URL` | `http://localhost:8765/mcp` | The client, phase 8. Added now so `.env.example` is complete |
 
@@ -155,7 +156,7 @@ Because the SDK's major version moved once already, `server.py` and `mapping.py`
 
 ## Decisions to confirm
 
-- **What counts as a local run.** The server should not start on the default dev `JWT_SECRET` if it is exposed. Proposed rule: it starts on the default secret only when it listens on `localhost`, and refuses on any other address
+- **What counts as a local run.** Settled in step 5: the server starts on the default dev `JWT_SECRET` only when `MCP_HOST` is `127.0.0.1`, `localhost` or `::1`, and exits with a message on any other address. It checks the host it was told to listen on, so a proxy in front of it is not seen
 - **Transport details.** Settled in step 1, see "SDK findings" below
 - **Token for Claude Code.** The API's login endpoint returns a token that lasts `TOKEN_TTL_MINUTES` (480). Fine for a manual check. A long-lived token for a person's own machine is a separate question and is not decided here
 

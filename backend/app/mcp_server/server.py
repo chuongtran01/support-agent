@@ -30,6 +30,10 @@ from app.retrieval.embeddings import Embedder
 from app.tools.context import ToolContext, utc_now
 from app.tools.registry import TOOLS, ToolSpec, run_tool, tool_schemas
 
+# Where the SDK serves the protocol. Said out loud so a new SDK default cannot move it; the
+# default of MCP_SERVER_URL in config.py ends with it
+MCP_PATH = "/mcp"
+
 
 def create_server(
     sessions: store.Sessions,
@@ -76,8 +80,8 @@ def create_app(
     clock: Callable[[], datetime] = utc_now,
     host: str = "127.0.0.1",
 ) -> Starlette:
-    """The server as a web app at ``/mcp``, with every request checked for a customer first."""
+    """The server as a web app at ``MCP_PATH``, with every request checked for a customer first."""
     server = create_server(sessions, authenticate, embedder=embedder, clock=clock)
-    app = server.streamable_http_app(host=host)
+    app = server.streamable_http_app(streamable_http_path=MCP_PATH, host=host)
     app.add_middleware(RequireCustomer, authenticate=authenticate)
     return app

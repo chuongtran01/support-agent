@@ -116,3 +116,14 @@ async def test_a_caller_who_is_not_signed_in_gets_an_error_not_tools(connection)
             await client.list_tools()
         with pytest.raises(MCPError):
             await client.call_tool("list_orders", {})
+
+
+async def test_without_an_embedder_search_fails_as_an_error_and_the_rest_work(connection):
+    async with await connection.client() as client:
+        search = await client.call_tool("search_knowledge", {"query": "return window"})
+        orders = await client.call_tool("list_orders", {})
+
+    assert search.is_error is True
+    assert search.meta[STATUS_KEY] == "error"
+    assert orders.is_error is False
+    assert orders.meta[STATUS_KEY] == "ok"
