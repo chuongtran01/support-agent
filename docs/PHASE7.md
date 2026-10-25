@@ -133,7 +133,7 @@ The SDK is `mcp` **2.3.0**, pinned in `backend/pyproject.toml` (`mcp==2.3.0`). T
 | Which server API | The low-level `mcp.server.Server`, built with `on_list_tools` and `on_call_tool` handlers. It takes each tool's `input_schema` as given, so the schemas from `tool_schemas()` go in unchanged. `MCPServer` (the renamed FastMCP) builds schemas from function signatures, which would replace the registry's, so it is not used |
 | How to serve it over HTTP | `Server.streamable_http_app()` returns a Starlette app; run it with uvicorn, which is already a dependency |
 | Endpoint | `/mcp`, the default `streamable_http_path` |
-| Reading the token | `ctx.headers` in a handler gives that request's headers (`None` on stdio), so the `Authorization` header is read on every call, as the design wants |
+| Reading the token | In a low-level handler the HTTP request is `ctx.request`, so `ctx.request.headers` gives that request's headers and the `Authorization` header is read on every call, as the design wants. `ctx.request` is `None` on the in-memory transport. (`ctx.headers` exists only on `MCPServer`'s `Context`.) Step 4 checks this over real HTTP |
 | SDK's own auth | `streamable_http_app` has `auth` and `token_verifier` options built around OAuth resource metadata. Not used: the token is the API's own signed token, checked with `read_token` |
 | Result type | `CallToolResult` has `content`, `structured_content`, `is_error` and `meta`, so the mapping table holds as written. `meta` is the `_meta` field |
 | In-memory testing | `mcp.client.Client(server)` connects to a `Server` in-process, with no network |
