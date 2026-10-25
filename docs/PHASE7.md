@@ -14,8 +14,8 @@ By the end, a person can start the server with `make mcp`, connect Claude Code t
 ## Deliverables
 
 - [ ] **Server**: `backend/app/mcp_server/`, run with `python -m app.mcp_server`, serving every entry of `registry.TOOLS` over Streamable HTTP
-- [ ] **Authentication**: a bearer token is required on every request, resolved to a customer with `read_token`; a missing, malformed or expired token is refused
-- [ ] **Result mapping**: `ToolOutput.text` as the result's text content, byte for byte; `status` and `receipt` in `_meta`; `isError` for `invalid_request` and `error`
+- [x] **Authentication**: a bearer token is required on every request, resolved to a customer with `read_token`; a missing, malformed or expired token is refused
+- [x] **Result mapping**: `ToolOutput.text` as the result's text content, byte for byte; `status` and `receipt` in `_meta`; `isError` for `invalid_request` and `error`
 - [ ] **Server-owned context**: its own DB pool, embedder and clock; the clock is injectable so tests can fix the date
 - [ ] **Settings**: `MCP_PORT` and, for later, `MCP_SERVER_URL`; both in `.env.example`
 - [ ] **Make target**: `make mcp`
@@ -55,8 +55,8 @@ The server is a thin layer. A request is authenticated, the customer is loaded, 
 | --- | --- |
 | `app/mcp_server/__init__.py` | Empty |
 | `app/mcp_server/__main__.py` | Starts the server on `MCP_PORT`; refuses to start with the default dev `JWT_SECRET` unless told it is a local run (see decisions) |
-| `app/mcp_server/server.py` | Builds the server: lists the tools from `TOOLS`, handles a call, builds the context |
-| `app/mcp_server/auth.py` | Reads the bearer token from the request and returns a `CurrentCustomer` or refuses |
+| `app/mcp_server/server.py` | `create_server` lists the tools from `TOOLS`, handles a call and builds the context; `create_app` serves it at `/mcp` behind the token check |
+| `app/mcp_server/auth.py` | `bearer_token` reads the header, `make_authenticate` turns it into a `CurrentCustomer` or `None`, and `RequireCustomer` is the middleware that answers 401 before the MCP app runs. The `Authenticate` type lives here |
 | `app/mcp_server/mapping.py` | `ToolOutput` to an MCP result and back. Plain functions with no SDK state, so phase 8's client uses the same file |
 
 SDK calls stay inside `server.py` and `mapping.py`, so a change in the SDK touches two files.
@@ -133,11 +133,13 @@ The SDK is `mcp` **2.3.0**, pinned in `backend/pyproject.toml` (`mcp==2.3.0`). T
 | Which server API | The low-level `mcp.server.Server`, built with `on_list_tools` and `on_call_tool` handlers. It takes each tool's `input_schema` as given, so the schemas from `tool_schemas()` go in unchanged. `MCPServer` (the renamed FastMCP) builds schemas from function signatures, which would replace the registry's, so it is not used |
 | How to serve it over HTTP | `Server.streamable_http_app()` returns a Starlette app; run it with uvicorn, which is already a dependency |
 | Endpoint | `/mcp`, the default `streamable_http_path` |
-| Reading the token | In a low-level handler the HTTP request is `ctx.request`, so `ctx.request.headers` gives that request's headers and the `Authorization` header is read on every call, as the design wants. `ctx.request` is `None` on the in-memory transport. (`ctx.headers` exists only on `MCPServer`'s `Context`.) Step 4 checks this over real HTTP |
+| Reading the token | In a low-level handler the HTTP request is `ctx.request`, so `ctx.request.headers` gives that request's headers and the `Authorization` header is read on every call, as the design wants. `ctx.request` is `None` on the in-memory transport. (`ctx.headers` exists only on `MCPServer`'s `Context`.) Checked over real HTTP in step 4: the header arrives, on every request |
 | SDK's own auth | `streamable_http_app` has `auth` and `token_verifier` options built around OAuth resource metadata. Not used: the token is the API's own signed token, checked with `read_token` |
 | Result type | `CallToolResult` has `content`, `structured_content`, `is_error` and `meta`, so the mapping table holds as written. `meta` is the `_meta` field |
 | In-memory testing | `mcp.client.Client(server)` connects to a `Server` in-process, with no network |
-| Local protection | On `127.0.0.1`, `localhost` or `::1` the app turns on DNS-rebinding protection by itself. Another host needs `transport_security` set |
+| Local protection | On `127.0.0.1`, `localhost` or `::1` the app turns on DNS-rebinding protection by itself, and it only accepts a `Host` header that has a port (`localhost:8765`). Another host needs `transport_security` set |
+| Where the 401 comes from | The SDK's own auth hooks are not used, so a `RequireCustomer` middleware on the Starlette app answers 401 with `WWW-Authenticate: Bearer`. The handler checks again, which also covers transports that have no HTTP layer |
+| Testing over HTTP | `httpx2` (the SDK's HTTP library, not `httpx`) has an ASGI transport, so the tests run the real app and the SDK's own client with no socket. That transport sends no start-up events, and the app needs them (`app.router.lifespan_context`), entered inside the test, since a fixture runs in another task and the SDK's task group then fails to exit |
 
 Because the SDK's major version moved once already, `server.py` and `mapping.py` stay the only files that import it, as planned.
 

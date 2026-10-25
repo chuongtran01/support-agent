@@ -6,7 +6,7 @@ agent used to pass in, and maps the output (see ``mapping``).
 """
 
 import json
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
@@ -20,17 +20,15 @@ from mcp_types import (
     ListToolsResult,
     PaginatedRequestParams,
 )
+from starlette.applications import Starlette
 
 from app.agent import store
 from app.auth import CurrentCustomer
+from app.mcp_server.auth import Authenticate, RequireCustomer
 from app.mcp_server.mapping import to_call_result, to_tool
 from app.retrieval.embeddings import Embedder
 from app.tools.context import ToolContext, utc_now
 from app.tools.registry import TOOLS, ToolSpec, run_tool, tool_schemas
-
-# Gets the request's headers (None when the transport has none) and returns the customer they
-# stand for, or None. The server never learns the customer from a tool argument.
-Authenticate = Callable[[Mapping[str, str] | None], Awaitable[CurrentCustomer | None]]
 
 
 def create_server(
@@ -68,3 +66,18 @@ def create_server(
         return to_call_result(output)
 
     return Server("northwind-support", on_list_tools=list_tools, on_call_tool=call_tool)
+
+
+def create_app(
+    sessions: store.Sessions,
+    authenticate: Authenticate,
+    *,
+    embedder: Embedder | None = None,
+    clock: Callable[[], datetime] = utc_now,
+    host: str = "127.0.0.1",
+) -> Starlette:
+    """The server as a web app at ``/mcp``, with every request checked for a customer first."""
+    server = create_server(sessions, authenticate, embedder=embedder, clock=clock)
+    app = server.streamable_http_app(host=host)
+    app.add_middleware(RequireCustomer, authenticate=authenticate)
+    return app
