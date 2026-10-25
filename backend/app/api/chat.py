@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.agent import store
+from app.agent.backends import ToolBackend
 from app.agent.llm import LLMClient
 from app.agent.loop import AgentDeps
 from app.agent.runner import TurnInProgress, TurnRunner
@@ -16,6 +17,7 @@ from app.api.deps import (
     get_embedder,
     get_llm,
     get_sessionmaker,
+    get_tool_backend,
     get_tracer,
     get_turns,
 )
@@ -124,6 +126,7 @@ async def send_message(
     embedder: Annotated[Embedder, Depends(get_embedder)],
     turns: Annotated[TurnRunner, Depends(get_turns)],
     tracer: Annotated[Tracer, Depends(get_tracer)],
+    tools: Annotated[ToolBackend, Depends(get_tool_backend)],
 ) -> StreamingResponse:
     """Send a message and stream the turn back as server-sent events."""
     try:
@@ -134,7 +137,10 @@ async def send_message(
         raise _conflict("chat_full", "This chat is full. Please start a new chat.")
     try:
         queue = turns.start(
-            AgentDeps(sessions, llm, embedder, tracer=tracer), customer, session_id, body.text
+            AgentDeps(sessions, llm, embedder, tracer=tracer, tools=tools),
+            customer,
+            session_id,
+            body.text,
         )
     except TurnInProgress:
         raise _conflict("turn_in_progress", "Wait for the answer before sending another.") from None

@@ -12,10 +12,12 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app import models
+from app.agent.backends import LocalBackend, McpBackend, ToolBackend
 from app.agent.llm import LLMClient
 from app.agent.openai_client import OpenAIClient
 from app.agent.runner import TurnRunner
 from app.auth import CurrentCustomer, read_token, to_current
+from app.config import settings
 from app.db import SessionLocal, get_session
 from app.retrieval.embeddings import Embedder, OpenAIEmbedder
 from app.tracing import Tracer
@@ -38,6 +40,16 @@ def get_llm() -> LLMClient:
 @cache
 def get_embedder() -> Embedder:
     return OpenAIEmbedder()
+
+
+def get_tool_backend(
+    sessions: Annotated[async_sessionmaker, Depends(get_sessionmaker)],
+    embedder: Annotated[Embedder, Depends(get_embedder)],
+) -> ToolBackend:
+    """Where this turn's tool calls run, from ``TOOL_BACKEND``."""
+    if settings.tool_backend == "mcp":
+        return McpBackend(settings.mcp_server_url)
+    return LocalBackend(sessions, embedder)
 
 
 def get_tracer() -> Tracer:

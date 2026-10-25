@@ -67,3 +67,9 @@ def no_tracing(monkeypatch):
     monkeypatch.setattr(settings, "langfuse_public_key", "")
     monkeypatch.setattr(settings, "langfuse_secret_key", "")
     tracing.get_tracer.cache_clear()
+
+
+@pytest.fixture(autouse=True)
+def local_tools(monkeypatch):
+    """The developer's .env may say TOOL_BACKEND=mcp; a test must not need the server running."""
+    monkeypatch.setattr(settings, "tool_backend", "local")

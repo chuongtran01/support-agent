@@ -17,8 +17,8 @@ By the end, a person can start `make mcp` and the API with `TOOL_BACKEND=mcp`, s
 - [x] **Short-lived tokens**: `create_token` takes an optional lifetime, so the agent can ask for a few minutes instead of the login lifetime
 - [x] **`ToolBackend`**: a one-method interface for running a tool call as a customer, and `LocalBackend`, which is today's `_run_tool` moved out of the loop with no change in behavior
 - [x] **`McpBackend`**: runs a call through the MCP server as the customer, and returns the `ToolOutput` the server's result maps back to
-- [ ] **Loop**: `AgentDeps` takes an optional backend; the loop uses it, and builds a `LocalBackend` from the deps it already has when there is none
-- [ ] **API**: the chat endpoint picks the backend from the setting
+- [x] **Loop**: `AgentDeps` takes an optional backend; the loop uses it, and builds a `LocalBackend` from the deps it already has when there is none
+- [x] **API**: the chat endpoint picks the backend from the setting
 - [ ] **Tests**: the loop's tool cases on both backends, the backend itself against the real app and real tokens, and the choice made by the setting
 - [ ] **End-to-end check**: one real chat turn through the API with `TOOL_BACKEND=mcp`, written up under "Gate check"
 
