@@ -1,6 +1,6 @@
 # Phase 8: The agent calls the tools over MCP
 
-**Status:** planned
+**Status:** done
 **Gate:** the existing tests pass unchanged on `local`; the loop's tool cases pass on `mcp`; one chat turn through the API works end to end with `TOOL_BACKEND=mcp`
 
 This is phase 2 of `MCP_DESIGN.md`. Phase 7 built the server; this file says how the agent starts using it.
@@ -20,7 +20,7 @@ By the end, a person can start `make mcp` and the API with `TOOL_BACKEND=mcp`, s
 - [x] **Loop**: `AgentDeps` takes an optional backend; the loop uses it, and builds a `LocalBackend` from the deps it already has when there is none
 - [x] **API**: the chat endpoint picks the backend from the setting
 - [x] **Tests**: the loop's tool cases on both backends, the backend itself against the real app and real tokens, and the choice made by the setting
-- [ ] **End-to-end check**: one real chat turn through the API with `TOOL_BACKEND=mcp`, written up under "Gate check"
+- [x] **End-to-end check**: one real chat turn through the API with `TOOL_BACKEND=mcp`, written up under "Gate check"
 
 ## What the earlier phases already give
 
@@ -110,7 +110,14 @@ A transport failure (server down, connection dropped, a timeout from the SDK's d
 
 ## Gate check
 
-To fill in when the phase is done.
+Run 2026-10-25.
+
+- **Tests:** 683 passed. The suite before the phase was 621; the existing tests passed unchanged on `local` after the `ToolBackend` refactor. Every test in `test_loop.py` that uses the `world` fixture runs on both backends (41 `mcp` runs), and breaking the MCP URL made only the tool-using `mcp` runs fail
+- **Real run, tools over MCP:** `make mcp` (port 8765) and the API with `TOOL_BACKEND=mcp` (port 8001) as two processes, a real OpenAI model, logged in as Alex. "Can you list my orders and tell me their status?" streamed a `list_orders` tool event with status `ok` and then an answer listing Alex's orders. The MCP server's log showed the `POST /mcp` requests for that call, so the tool ran in the server and not in the API
+- **Real run, server stopped:** with the MCP server killed, a refund request ended with the `list_orders` call as an `error`, the API logged "tool call list_orders over MCP failed", and the model told the customer it could not confirm the order and asked for the order number. It did not claim anything was done or not done. A refund was not attempted, and no refund was made
+- **Cleanup:** the two chat sessions the run made were deleted; no refund or ticket rows were created
+
+Not covered: a refund through the real processes (the run was read-only so it left the dev database as it was; refunds over MCP are covered by the tests against the real app), and a call that stalls rather than fails (phase 9).
 
 ## Decisions to confirm
 
