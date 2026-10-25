@@ -19,7 +19,7 @@ By the end, a person can start the server with `make mcp`, connect Claude Code t
 - [x] **Server-owned context**: its own DB pool, embedder and clock; the clock is injectable so tests can fix the date
 - [x] **Settings**: `MCP_HOST`, `MCP_PORT` and, for later, `MCP_SERVER_URL`, all in `.env.example`
 - [x] **Make target**: `make mcp`
-- [ ] **Tests**: the existing tool cases run through the in-memory transport, plus the identity, schema and receipt checks below
+- [x] **Tests**: the existing tool cases run through the in-memory transport, plus the identity, schema and receipt checks below
 - [ ] **Claude Code check**: the server connected to Claude Code, with a lookup and a refund done by hand, written up under "Gate check"
 
 ## What the earlier phases already give
@@ -102,7 +102,7 @@ The server reads `DATABASE_URL`, `JWT_SECRET` and `OPENAI_API_KEY` from the same
 
 | Test | Checks |
 | --- | --- |
-| Tools through the protocol | The cases in `test_tools.py` that call `run_tool` give the same text, status and receipt when called through the in-memory transport |
+| Tools through the protocol | `test_mcp_tools.py` runs the cases of `test_tools.py` and `test_registry.py` that go through `run_tool` (25 of them) against `run_tool` itself and against the in-memory transport, with the same expectations. Calls whose arguments are not a JSON object are left out: the protocol cannot carry them |
 | Tool list | The server lists exactly the keys of `TOOLS`; `decide_refund` and every approval action are absent |
 | Schema equivalence | Each tool's `inputSchema` equals `tool_schemas()` for that tool |
 | Identity | No token, a malformed token, a token signed with another secret and an expired token are all refused; a valid token for customer A cannot read customer B's order |
