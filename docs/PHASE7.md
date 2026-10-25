@@ -124,6 +124,23 @@ The tests run on the in-memory transport and the seeded test database, so they n
 6. The remaining tests from the table
 7. The Claude Code check, written into this file
 
+## SDK findings (step 1, 2026-10-25)
+
+The SDK is `mcp` **2.3.0**, pinned in `backend/pyproject.toml` (`mcp==2.3.0`). The 2.x line is a new major version: much of what is written about the Python SDK online describes 1.x and does not apply. `from mcp.server.fastmcp import FastMCP` raises an error that says so. Adding it changed no other installed package. It also installs `mcp-types` (imported as `mcp_types`), which holds the protocol types.
+
+| Question | Answer |
+| --- | --- |
+| Which server API | The low-level `mcp.server.Server`, built with `on_list_tools` and `on_call_tool` handlers. It takes each tool's `input_schema` as given, so the schemas from `tool_schemas()` go in unchanged. `MCPServer` (the renamed FastMCP) builds schemas from function signatures, which would replace the registry's, so it is not used |
+| How to serve it over HTTP | `Server.streamable_http_app()` returns a Starlette app; run it with uvicorn, which is already a dependency |
+| Endpoint | `/mcp`, the default `streamable_http_path` |
+| Reading the token | `ctx.headers` in a handler gives that request's headers (`None` on stdio), so the `Authorization` header is read on every call, as the design wants |
+| SDK's own auth | `streamable_http_app` has `auth` and `token_verifier` options built around OAuth resource metadata. Not used: the token is the API's own signed token, checked with `read_token` |
+| Result type | `CallToolResult` has `content`, `structured_content`, `is_error` and `meta`, so the mapping table holds as written. `meta` is the `_meta` field |
+| In-memory testing | `mcp.client.Client(server)` connects to a `Server` in-process, with no network |
+| Local protection | On `127.0.0.1`, `localhost` or `::1` the app turns on DNS-rebinding protection by itself. Another host needs `transport_security` set |
+
+Because the SDK's major version moved once already, `server.py` and `mapping.py` stay the only files that import it, as planned.
+
 ## Gate check
 
 | Check | Result |
@@ -137,7 +154,7 @@ The tests run on the in-memory transport and the seeded test database, so they n
 ## Decisions to confirm
 
 - **What counts as a local run.** The server should not start on the default dev `JWT_SECRET` if it is exposed. Proposed rule: it starts on the default secret only when it listens on `localhost`, and refuses on any other address
-- **Transport details.** Which of the SDK's HTTP helpers to use, and whether the endpoint is `/mcp`. Fixed once the SDK version is pinned in step 1
+- **Transport details.** Settled in step 1, see "SDK findings" below
 - **Token for Claude Code.** The API's login endpoint returns a token that lasts `TOKEN_TTL_MINUTES` (480). Fine for a manual check. A long-lived token for a person's own machine is a separate question and is not decided here
 
 ## Not in this phase
