@@ -14,7 +14,7 @@ By the end, a person can start `make mcp` and the API with `TOOL_BACKEND=mcp`, s
 ## Deliverables
 
 - [x] **Setting**: `TOOL_BACKEND` (`local` or `mcp`, default `local`) in the settings and `.env.example`
-- [ ] **Short-lived tokens**: `create_token` takes an optional lifetime, so the agent can ask for a few minutes instead of the login lifetime
+- [x] **Short-lived tokens**: `create_token` takes an optional lifetime, so the agent can ask for a few minutes instead of the login lifetime
 - [ ] **`ToolBackend`**: a one-method interface for running a tool call as a customer, and `LocalBackend`, which is today's `_run_tool` moved out of the loop with no change in behavior
 - [ ] **`McpBackend`**: runs a call through the MCP server as the customer, and returns the `ToolOutput` the server's result maps back to
 - [ ] **Loop**: `AgentDeps` takes an optional backend; the loop uses it, and builds a `LocalBackend` from the deps it already has when there is none

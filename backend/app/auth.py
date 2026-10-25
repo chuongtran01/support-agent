@@ -51,9 +51,12 @@ def _decoy_hash() -> str:
     return hash_password("decoy")
 
 
-def create_token(customer_id: int, now: datetime | None = None) -> str:
+def create_token(
+    customer_id: int, now: datetime | None = None, *, lifetime: timedelta | None = None
+) -> str:
+    """A signed token for a customer. It lasts ``lifetime``, or the login lifetime if none."""
     issued = now or datetime.now(UTC)
-    expires = issued + timedelta(minutes=settings.token_ttl_minutes)
+    expires = issued + (lifetime or timedelta(minutes=settings.token_ttl_minutes))
     claims = {"sub": str(customer_id), "iat": issued, "exp": expires}
     return jwt.encode(claims, settings.jwt_secret, algorithm=ALGORITHM)
 

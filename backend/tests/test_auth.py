@@ -62,6 +62,20 @@ def test_a_token_lasts_until_its_expiry():
     assert read_token(create_token(42, now=almost)) == 42
 
 
+def test_a_token_with_its_own_lifetime_expires_then_not_at_the_login_lifetime():
+    lifetime = timedelta(minutes=2)
+    issued = datetime.now(UTC) - timedelta(minutes=1)
+    assert read_token(create_token(42, now=issued, lifetime=lifetime)) == 42
+
+    issued = datetime.now(UTC) - timedelta(minutes=3)
+    assert read_token(create_token(42, now=issued, lifetime=lifetime)) is None
+
+
+def test_a_token_with_no_lifetime_lasts_the_login_lifetime():
+    issued = datetime.now(UTC) - timedelta(minutes=settings.token_ttl_minutes - 1)
+    assert read_token(create_token(42, now=issued, lifetime=None)) == 42
+
+
 def test_a_tampered_token_is_refused():
     header, payload, signature = create_token(42).split(".")
     other = create_token(43).split(".")[1]
