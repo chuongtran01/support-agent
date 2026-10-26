@@ -15,7 +15,7 @@ By the end, `McpBackend` tells these apart, gives the slow case a time limit, an
 
 - [ ] **Timeout**: `MCP_CALL_TIMEOUT_SECONDS` in the settings and `.env.example`; every MCP call is bounded by it
 - [ ] **Outcomes**: `McpBackend` returns `error` when the call never left the agent, and `unknown` when it may have reached the server
-- [ ] **Which steps matter**: each tool that changes something has a customer-facing name, so an unknown result can say what could not be confirmed
+- [x] **Which steps matter**: each tool that changes something has a customer-facing name, so an unknown result can say what could not be confirmed
 - [ ] **Loop**: an unknown step is kept apart from a done step; a turn that ends after one says that the step could not be confirmed, and never that it was done
 - [ ] **Tests**: a forced timeout after commit, a call that never left, the loop's messages, and the time limit itself
 - [ ] **Real run**: the API and the server as two processes, the server stopped, written up under "Gate check"

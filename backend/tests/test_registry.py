@@ -45,6 +45,26 @@ def test_the_agent_gets_six_tools_and_not_decide_refund():
     ]
 
 
+def test_exactly_the_tools_that_change_something_have_an_action():
+    actions = {name: spec.action for name, spec in TOOLS.items()}
+
+    assert actions == {
+        "search_knowledge": None,
+        "list_orders": None,
+        "lookup_order": None,
+        "issue_refund": "your refund",
+        "create_ticket": "your support ticket",
+        "escalate": "the escalation to our support team",
+    }
+
+
+def test_the_action_is_not_something_the_model_is_told():
+    schemas = tool_schemas()
+
+    assert all("action" not in vars(schema) for schema in schemas)
+    assert "your refund" not in json.dumps([vars(schema) for schema in schemas])
+
+
 def test_list_orders_takes_no_arguments_at_all():
     schema = next(t for t in tool_schemas() if t.name == "list_orders")
     assert schema.parameters["properties"] == {}

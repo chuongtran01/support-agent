@@ -65,6 +65,9 @@ class ToolSpec:
     description: str
     arguments: type[Arguments]
     handler: Callable[..., Awaitable[Result]]
+    # What the tool changes, in words for the customer ("your refund"). None for a tool that
+    # only reads. Used to say what could not be confirmed when a call's outcome is unknown
+    action: str | None = None
 
 
 TOOLS: dict[str, ToolSpec] = {
@@ -101,12 +104,14 @@ TOOLS: dict[str, ToolSpec] = {
             "customer exactly that. Never promise a refund before the result says it was made.",
             IssueRefundArguments,
             issue_refund,
+            action="your refund",
         ),
         ToolSpec(
             "create_ticket",
             "Open a support ticket for a problem you cannot solve yourself.",
             CreateTicketArguments,
             create_ticket,
+            action="your support ticket",
         ),
         ToolSpec(
             "escalate",
@@ -114,6 +119,7 @@ TOOLS: dict[str, ToolSpec] = {
             "knowledge base has no answer.",
             EscalateArguments,
             escalate,
+            action="the escalation to our support team",
         ),
     )
 }
