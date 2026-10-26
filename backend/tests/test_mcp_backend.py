@@ -6,9 +6,11 @@ The cases that matter are the ones ``LocalBackend`` is held to: the same call mu
 """
 
 import json
+import time
 from contextlib import asynccontextmanager
 from datetime import timedelta
 
+import anyio
 import httpx2
 import jwt
 import pytest
@@ -16,7 +18,13 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app import models
-from app.agent.backends import TRANSPORT_FAILED_MESSAGE, LocalBackend, McpBackend
+from app.agent.backends import (
+    NOT_DONE_MESSAGE,
+    UNKNOWN_READ_MESSAGE,
+    UNKNOWN_WRITE_MESSAGE,
+    LocalBackend,
+    McpBackend,
+)
 from app.agent.llm import ToolCall
 from app.auth import ALGORITHM, to_current
 from app.config import settings
@@ -198,27 +206,74 @@ async def test_empty_arguments_are_an_empty_object(rig):
     assert out.status == "ok"
 
 
-async def test_a_server_that_is_not_there_is_not_reported_as_nothing_changed(rig):
-    def refused(request: httpx2.Request) -> httpx2.Response:
-        raise httpx2.ConnectError("connection refused")
+# When a call fails: never left, or unknown ------------------------------------------------
 
-    down = McpBackend(
+
+class StallsAfterCommit:
+    """Sessions for the server whose use ends late: the tool has committed by then, and the
+    answer has not gone out yet. This is the case a timeout cannot tell from a lost answer."""
+
+    def __init__(self, sessions, seconds: float):
+        self.sessions = sessions
+        self.seconds = seconds
+
+    @asynccontextmanager
+    async def __call__(self):
+        async with self.sessions() as session:
+            yield session
+        await anyio.sleep(self.seconds)
+
+
+class SlowClose(httpx2.AsyncClient):
+    """An HTTP client that takes a long time to close, after the call has been answered."""
+
+    async def __aexit__(self, *exc):
+        await anyio.sleep(10)
+        return await super().__aexit__(*exc)
+
+
+def stall(rig, seconds: float = 10, timeout: float = 0.5) -> None:
+    """Make the server commit and then take ``seconds`` to answer, and the backend give up
+    after ``timeout``."""
+    rig.app = create_app(
+        StallsAfterCommit(rig.sessions, seconds),
+        make_authenticate(rig.sessions),
+        clock=lambda: NOW,
+        host="localhost",
+    )
+    rig.backend.timeout = timeout
+
+
+def refused(request: httpx2.Request) -> httpx2.Response:
+    raise httpx2.ConnectError("connection refused")
+
+
+async def never_answers(request: httpx2.Request) -> httpx2.Response:
+    await anyio.sleep(10)
+    raise AssertionError("the timeout should have stopped this")
+
+
+def backend_over(transport, **options) -> McpBackend:
+    return McpBackend(
         URL,
         http_client=lambda headers: httpx2.AsyncClient(
-            transport=httpx2.MockTransport(refused), headers=headers
+            transport=httpx2.MockTransport(transport), headers=headers
         ),
+        **options,
     )
-    call = ToolCall("call-1", "list_orders", "{}")
 
-    out = await down.run(rig.customer("alex"), call)
+
+async def test_a_server_that_is_not_there_says_the_step_was_not_done(rig):
+    call = ToolCall("call-1", "issue_refund", "{}")
+
+    out = await backend_over(refused).run(rig.customer("alex"), call)
 
     assert (out.status, out.receipt) == ("error", None)
-    assert body(out)["message"] == TRANSPORT_FAILED_MESSAGE
-    assert "nothing was changed" not in out.text
-    assert "may or may not" in out.text
+    assert body(out)["message"] == NOT_DONE_MESSAGE
+    assert "was not done" in out.text
 
 
-async def test_a_server_that_refuses_the_token_gives_an_error_and_no_receipt(rig):
+async def test_a_server_that_refuses_the_token_says_the_step_was_not_done(rig):
     ghost = rig.customer("alex").model_copy(update={"id": 999_999})  # a token for no one
     call = ToolCall("call-1", "list_orders", "{}")
 
@@ -226,4 +281,86 @@ async def test_a_server_that_refuses_the_token_gives_an_error_and_no_receipt(rig
         out = await rig.backend.run(ghost, call)
 
     assert (out.status, out.receipt) == ("error", None)
-    assert "may or may not" in out.text
+    assert body(out)["message"] == NOT_DONE_MESSAGE
+
+
+async def test_a_timeout_while_connecting_says_the_step_was_not_done(rig):
+    call = ToolCall("call-1", "create_ticket", '{"subject": "s", "body": "b"}')
+
+    out = await backend_over(never_answers, timeout=0.2).run(rig.customer("alex"), call)
+
+    assert (out.status, out.receipt) == ("error", None)
+    assert body(out)["message"] == NOT_DONE_MESSAGE
+
+
+async def test_a_timeout_after_the_commit_is_unknown_and_not_nothing_changed(rig):
+    stall(rig)
+    call = ToolCall("call-1", "create_ticket", '{"subject": "Zipper", "body": "It broke."}')
+
+    async with rig.running():
+        out = await rig.backend.run(rig.customer("sam"), call)
+
+    assert out.status == "unknown"
+    assert out.receipt == "Whether your support ticket went through could not be confirmed."
+    assert body(out)["message"] == UNKNOWN_WRITE_MESSAGE
+    assert "nothing was changed" not in out.text
+    assert await rig.world.count(models.Ticket) == 1  # it was done, and the client could not know
+
+
+@pytest.mark.parametrize(
+    ("name", "arguments", "action"),
+    [
+        ("create_ticket", {"subject": "s", "body": "b"}, "your support ticket"),
+        ("escalate", {"reason": "r"}, "the escalation to our support team"),
+        (
+            "issue_refund",
+            {"order_item_id": 1, "quantity": 1, "reason_code": "changed_mind"},
+            "your refund",
+        ),
+    ],
+)
+async def test_an_unknown_write_names_what_could_not_be_confirmed(rig, name, arguments, action):
+    stall(rig, timeout=0.3)
+    call = ToolCall("call-1", name, json.dumps(arguments))
+
+    async with rig.running():
+        out = await rig.backend.run(rig.customer("alex"), call)
+
+    assert out.status == "unknown"
+    assert out.receipt == f"Whether {action} went through could not be confirmed."
+
+
+async def test_an_unknown_read_has_no_receipt_and_may_be_tried_again(rig):
+    stall(rig)
+    call = ToolCall("call-1", "list_orders", "{}")
+
+    async with rig.running():
+        out = await rig.backend.run(rig.customer("alex"), call)
+
+    assert (out.status, out.receipt) == ("unknown", None)
+    assert body(out)["message"] == UNKNOWN_READ_MESSAGE
+
+
+async def test_the_call_stops_at_the_configured_time(rig):
+    stall(rig, seconds=10, timeout=0.3)
+    call = ToolCall("call-1", "list_orders", "{}")
+
+    async with rig.running():
+        started = time.monotonic()
+        await rig.backend.run(rig.customer("alex"), call)
+        took = time.monotonic() - started
+
+    assert took < 3
+
+
+async def test_an_answer_that_arrived_is_kept_when_only_closing_is_slow(rig):
+    rig.backend.timeout = 0.5
+    rig.backend.http_client = lambda headers: SlowClose(
+        transport=httpx2.ASGITransport(app=rig.app), base_url=BASE, headers=headers
+    )
+    call = ToolCall("call-1", "list_orders", "{}")
+
+    async with rig.running():
+        out = await rig.backend.run(rig.customer("priya"), call)
+
+    assert out.status == "ok"
