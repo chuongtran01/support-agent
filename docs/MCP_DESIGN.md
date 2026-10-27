@@ -118,7 +118,7 @@ The headline result for the README: pass rates equal on both backends, plus the 
 
 ## Development roadmap
 
-Four phases, each ending in a gate that must pass before the next starts.
+Four phases, each ending in a gate that must pass before the next starts. They were built as phases 7 to 11 (see `PHASE7.md` to `PHASE11.md`): the four below, plus the idempotency key and one retry (phase 11), and all are done.
 
 | # | Phase | Deliverables | Gate |
 | --- | --- | --- | --- |
@@ -133,10 +133,11 @@ Four phases, each ending in a gate that must pass before the next starts.
 | --- | --- | --- |
 | Mount in the FastAPI app or run as a separate process | Decision made | Separate process; see Deployment. It costs one more thing to start, so `make mcp` and a note in the README |
 | API and server configured with different `JWT_SECRET` values | Risk | The server refuses to start on the default dev secret outside local runs, and a test checks that a token made by the API is accepted by the server |
-| Double refund after an unknown outcome | Risk | No tool retries; an idempotency key is a later change |
+| Double refund after an unknown outcome | Risk, mostly closed | Phase 11: the three write tools run once per idempotency key and the client retries an unknown call with the same key. Still open: the model itself calling `issue_refund` again after an unknown result is a new call with a new key |
 | Receipt leaking into `content` | Risk | A test that asserts the receipt is only in `_meta` |
 | Citations break if the text is reformatted | Risk | `content` is the exact `ToolOutput.text`; a test compares them |
 | SDK API changes between versions | Risk | Pin the version; keep the SDK use inside two small modules |
 | Token lifetime on a long-lived MCP connection | Open decision | Check the token on every call, not only at connect |
-| Eval noise hides a real difference between backends | Risk | Run dev three times per backend, as in phase 6 |
+| Eval noise hides a real difference between backends | Risk, closed | Dev three times and test once per backend (phase 10): totals 174 and 172 of 177, no case failing only on one side, every difference explained |
+| Move the tool code out of the backend package, fetch schemas from `tools/list`, connection pooling, split call timeout | Backlog | Not needed for the numbers; the measured hop is about 24 ms per call |
 | Scope creep into Gmail, Calendar and memory | Risk | Out of scope here; this project ends at the README numbers |

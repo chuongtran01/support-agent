@@ -33,6 +33,19 @@ details and failures are in [`docs/PHASE6.md`](docs/PHASE6.md).
 forbidden text, citations, and that no other customer's data was touched. The judge is a second opinion from a
 model and changes no pass or fail. Cost is tokens times list price, an upper bound.
 
+**The agent over MCP** (2026-10-27). The same agent with its tools behind an MCP server (`TOOL_BACKEND=mcp`, a separate process) against the in-process tools, same model and prompt, dev three runs and test once:
+
+| | Dev, in process | Dev, MCP | Test, in process | Test, MCP |
+| --- | --- | --- | --- | --- |
+| Pass rate | 174/177 (98%) | 172/177 (97%) | 34/36 (94%) | 33/36 (92%) |
+| Refund decided correctly | 177/177 | 177/177 | 36/36 | 36/36 |
+| Tool calls lost to the transport | 0/260 | 0/267 | 0/56 | 0/56 |
+| Median tool call | 6 ms | 30 ms | 6 ms | 29 ms |
+
+The pass rates match within the run-to-run noise (the two dev totals differ by two runs, and every differing case is
+explained in [`docs/PHASE10.md`](docs/PHASE10.md)). The hop costs about 24 ms per tool call, about 35 ms on a message
+that takes four to five seconds. The default is still the in-process tools.
+
 **Retrieval** (recall@5 / MRR; the reranker is built but off, see below)
 
 | | Dev (59 questions) | Test (23 questions) |
@@ -218,6 +231,8 @@ about 10 cents.
 | Agent, dev, 3 runs, with the judge | `make seed && make eval-agent ARGS="--split dev --repeat 3 --judge"` |
 | Agent, test, 1 run, with the judge | `make seed && make eval-agent ARGS="--split test --judge"` |
 | Retrieval, all four modes | `make eval-retrieval ARGS="--split dev"` and `--split test` |
+| Agent over MCP, dev, 3 runs | `make mcp` in another terminal, then `make seed && make eval-agent ARGS="--split dev --repeat 3 --judge --backend mcp"` |
+| Agent over MCP, test, 1 run | the same with `--split test` |
 | Agent with the reranker on | `RERANK_ENABLED=true make eval-agent ARGS="--split dev --repeat 3"` |
 | Demo in a browser | `make frontend-demo` |
 
