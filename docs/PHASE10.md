@@ -1,6 +1,6 @@
 # Phase 10: The evals and the cost of the hop
 
-**Status:** in progress (steps 1 to 3 of 7 built)
+**Status:** in progress (steps 1 to 4 of 7 built)
 **Gate:** the agent eval gives the same pass rates on `local` and `mcp` within run-to-run noise, with no tool call lost to the transport; the added time per tool call is measured; the README has the numbers and the commands that reproduce them
 
 This is phase 4 of `MCP_DESIGN.md`. Phases 7 to 9 built the server, the client and the failure handling, and tested them with scripted models. This phase asks the question the whole change exists to answer: does the real agent, with the real model, do as well through MCP as it does in-process, and what does the hop cost?
@@ -18,7 +18,7 @@ By the end the README says, with numbers: the agent passes as often through MCP 
 - [x] **`--backend`**: `agent_eval.py` takes `--backend local|mcp` (default `local`) and builds the agent's tools accordingly (`build_backend` returns `None` for `local`, `McpBackend(settings.mcp_server_url)` for `mcp`, and refuses any other name)
 - [x] **Preflight**: an `mcp` run first checks that the server answers, and stops with a clear message if it does not. It seeds once so a customer exists, lists the tools through `McpBackend.list_tools`, and compares names and input schemas with the registry's
 - [x] **Tool timing**: every tool call's duration is recorded on both backends, and the report gives the median and 95th percentile per backend. `TimedBackend` wraps the backend (a `LocalBackend` for `local`); `tool_timing` gives calls, all/reads/writes spreads in milliseconds, and `lost` (`error`, `unknown` or raised), printed in the report and kept in the summary under `tools`
-- [ ] **Result files**: the file name and its contents say which backend produced them, and traces carry the backend as a tag
+- [x] **Result files**: the file name and its contents say which backend produced them, and traces carry the backend as a tag. The file is `agent-<split>-<backend>-<stamp>.json` (earlier files have no backend in the name), it holds `backend` at the top and in the summary, the traces' `eval_run` tag is the same name, and `local` or `mcp` is added to their tags
 - [ ] **Tests**: the new pieces, next to the harness's existing tests in `test_agent_eval.py`
 - [ ] **Recorded runs**: dev three times and test once, on each backend, with the result files described under "Gate check"
 - [ ] **Comparison**: the two backends side by side, case by case, with every difference explained
@@ -87,7 +87,7 @@ The README puts a dev run of three repeats at about ten cents. Two backends and 
 1. ~~`--backend` in the harness, `McpBackend` built from the setting, and its test~~ (done)
 2. ~~The preflight and its tests~~ (done; run for real against a stopped and a running server)
 3. ~~`TimedBackend`, the timing in the report, the transport-loss count, and their tests~~ (done)
-4. The backend in the result file name, contents and trace tags
+4. ~~The backend in the result file name, contents and trace tags~~ (done; the file contents and tags are checked by the real run in step 5, the name by a test)
 5. A short real run of each backend on a few cases (`--only`) to check the plumbing before spending on the full runs
 6. The full recorded runs: dev three times and test once, `local` then `mcp`, `make seed` between and after
 7. The comparison, the README section and the commands, and `MCP_DESIGN.md`

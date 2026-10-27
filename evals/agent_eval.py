@@ -424,6 +424,8 @@ def print_judge(judge: dict) -> None:
 
 
 def print_report(summary: dict, cases: list[AgentCase], outcomes: list) -> None:
+    if "backend" in summary:
+        print(f"\nBackend: {summary['backend']}")
     print(f"\nOverall: {_percent(summary['overall'])}")
     for title, key in (("By category", "by_category"), ("By trap", "by_trap")):
         print(f"\n{title}")
@@ -462,6 +464,11 @@ def print_report(summary: dict, cases: list[AgentCase], outcomes: list) -> None:
             print(f"  {label(case, number, repeated)} [{case.category}] {case.description}")
             for problem in result.problems:
                 print(f"      {problem}")
+
+
+def run_name(split: str, backend: str, stamp: str) -> str:
+    """Names the result file and the traces of one run, so the two backends' files differ."""
+    return f"agent-{split}-{backend}-{stamp}"
 
 
 def build_backend(name: str) -> ToolBackend | None:
@@ -575,9 +582,9 @@ async def main(
                         "case": case.id,
                         "category": case.category,
                         "run": str(run_number),
-                        "eval_run": f"agent-{split}-{stamp}",
+                        "eval_run": run_name(split, backend, stamp),
                     },
-                    ["eval", split],
+                    ["eval", split, backend],
                 ),
             )
             run, result = await run_case(traced, case, judge)
@@ -589,12 +596,17 @@ async def main(
         await engine.dispose()
 
     summary = summarize(cases, outcomes)
+    summary["backend"] = backend
     summary["tools"] = tool_timing(timed.calls)
     print_report(summary, cases, outcomes)
     RESULTS.mkdir(exist_ok=True)
-    path = RESULTS / f"agent-{split}-{stamp}.json"
+    path = RESULTS / f"{run_name(split, backend, stamp)}.json"
     detail = case_details(cases, outcomes)
-    path.write_text(json.dumps({"split": split, "summary": summary, "cases": detail}, indent=2))
+    path.write_text(
+        json.dumps(
+            {"split": split, "backend": backend, "summary": summary, "cases": detail}, indent=2
+        )
+    )
     print(f"\nWrote {path}")
 
 

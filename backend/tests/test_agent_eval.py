@@ -10,6 +10,7 @@ from agent_eval import (
     label,
     preflight,
     print_tool_timing,
+    run_name,
     run_numbers,
     stability,
     tool_timing,
@@ -231,3 +232,10 @@ def test_the_report_shows_the_tool_timing_in_milliseconds_and_the_lost_calls(cap
     assert "(1, 0 lost" in out
     assert "12 ms median" in out
     assert "writes  -" in out
+
+
+def test_the_backend_is_in_the_name_of_the_run_that_names_the_file_and_the_traces():
+    local = run_name("dev", "local", "20261027-100000")
+    over_mcp = run_name("dev", "mcp", "20261027-100000")
+    assert local == "agent-dev-local-20261027-100000"
+    assert over_mcp == "agent-dev-mcp-20261027-100000"
