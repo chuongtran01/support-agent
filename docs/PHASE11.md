@@ -22,8 +22,8 @@ A key identifies one call. If the model decides, after an `unknown`, to call `is
 - [x] **Replay**: a tool marked idempotent runs once per customer and key; a second call with the same key and the same request returns the first call's output exactly, and a second call with a different request is refused
 - [x] **Tools**: `issue_refund`, `create_ticket` and `escalate` are marked idempotent
 - [x] **Transport**: the key travels with the call over MCP and the server reads it
-- [ ] **Client**: `McpBackend` makes one key per call and retries once after an `unknown` when that is safe
-- [ ] **Tests**: replay, refusal, concurrency, isolation between customers, rollback, the transport, and the retry
+- [x] **Client**: `McpBackend` makes one key per call and retries once after an `unknown` when that is safe
+- [x] **Tests**: replay, refusal, concurrency, isolation between customers, rollback, the transport, and the retry
 - [ ] **Real run**: a real server whose first answer is lost, the retry returning the stored result, one row in the database, written up under "Gate check"
 
 ## What the earlier phases already give

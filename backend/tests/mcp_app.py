@@ -21,8 +21,9 @@ URL = f"{BASE}{MCP_PATH}"
 class _AppClient(httpx2.AsyncClient):
     """An HTTP client to an app that it starts on entry and stops on exit."""
 
-    def __init__(self, app, headers):
-        super().__init__(transport=httpx2.ASGITransport(app=app), base_url=BASE, headers=headers)
+    def __init__(self, app, headers, wrap):
+        transport = wrap(httpx2.ASGITransport(app=app))
+        super().__init__(transport=transport, base_url=BASE, headers=headers)
         self._app = app
         self._running = AsyncExitStack()
 
@@ -37,11 +38,19 @@ class _AppClient(httpx2.AsyncClient):
             await self._running.aclose()
 
 
-def mcp_backend(sessions, *, embedder=None, clock) -> McpBackend:
+def mcp_backend(sessions, *, embedder=None, clock, serving=None, wrap=lambda t: t) -> McpBackend:
+    """``serving`` is the sessions the server runs tools with, if not ``sessions`` (the tests that
+    make the server slow); ``wrap`` puts something around the transport (the tests that lose a
+    request or an answer on the way)."""
+
     def client(headers: dict[str, str]) -> httpx2.AsyncClient:
         app = create_app(
-            sessions, make_authenticate(sessions), embedder=embedder, clock=clock, host="localhost"
+            serving or sessions,
+            make_authenticate(sessions),
+            embedder=embedder,
+            clock=clock,
+            host="localhost",
         )
-        return _AppClient(app, headers)
+        return _AppClient(app, headers, wrap)
 
     return McpBackend(URL, http_client=client)

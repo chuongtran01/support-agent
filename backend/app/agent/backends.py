@@ -91,8 +91,13 @@ class McpBackend:
     A call that fails is either ``error`` or ``unknown``. If it failed before the request that
     runs the tool was sent (connecting, initializing, a refused token), nothing was done: it is
     an ``error`` that says so. After that request was sent the server may have acted, whatever
-    went wrong next, so the step is ``unknown``. The whole call, connecting included, is
-    limited to ``timeout`` seconds.
+    went wrong next, so the step is ``unknown``. Each attempt, connecting included, is limited
+    to ``timeout`` seconds.
+
+    An ``unknown`` call is tried once more, with the same idempotency key, if repeating it is
+    safe: a tool that only reads, or one that runs once per key. The server then either runs it
+    for the first time or answers with what the first attempt did, so the step happens once and
+    the customer learns how it ended. If the second attempt is unknown too, so is the result.
     """
 
     def __init__(
@@ -120,9 +125,22 @@ class McpBackend:
         if not isinstance(arguments, dict):
             return _output("invalid_request", "The arguments must be a JSON object.")
 
-        token = create_token(customer.id, lifetime=self.lifetime)
-        # One key for this call. A tool that is not idempotent ignores it
+        # One key for this call, kept for the retry. A tool that is not idempotent ignores it
         key = self.new_key()
+        output = await self._attempt(customer, call, arguments, key)
+        if output.status == "unknown" and self._safe_to_repeat(call.name):
+            logger.warning("tool call %s over MCP is unknown, trying once more", call.name)
+            output = await self._attempt(customer, call, arguments, key)
+        return output
+
+    def _safe_to_repeat(self, name: str) -> bool:
+        spec = self.tools.get(name)
+        return spec is not None and (spec.action is None or spec.idempotent)
+
+    async def _attempt(
+        self, customer: CurrentCustomer, call: ToolCall, arguments: dict, key: str
+    ) -> ToolOutput:
+        token = create_token(customer.id, lifetime=self.lifetime)
         sent = False
         result = None
         try:

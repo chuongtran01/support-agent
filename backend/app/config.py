@@ -53,8 +53,9 @@ class Settings(BaseSettings):
     mcp_host: str = "127.0.0.1"
     mcp_port: int = 8765
     mcp_server_url: str = "http://localhost:8765/mcp"
-    # The most one tool call over MCP may take, connecting included. A call that runs out of it
-    # after being sent is reported as unknown, not as failed
+    # The most one attempt at a tool call over MCP may take, connecting included. An attempt that
+    # runs out of it after being sent is unknown, not failed, and is tried once more when that is
+    # safe: one call can take up to twice this
     mcp_call_timeout_seconds: float = Field(default=30, gt=0)
 
     @property
