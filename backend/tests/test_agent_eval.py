@@ -3,12 +3,16 @@ import pytest_asyncio
 from agent_checks import CaseResult, RunRecord
 from agent_eval import (
     PreflightError,
+    TimedBackend,
+    TimedCall,
     build_backend,
     case_details,
     label,
     preflight,
+    print_tool_timing,
     run_numbers,
     stability,
+    tool_timing,
 )
 from test_agent_checks import case
 
@@ -55,9 +59,10 @@ from judge import Verdict
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.agent.backends import McpBackend
+from app.agent.llm import ToolCall
 from app.auth import to_current
 from app.config import settings
-from app.tools.registry import tool_schemas
+from app.tools.registry import ToolOutput, tool_schemas
 from tests.mcp_app import mcp_backend
 from tests.tool_world import NOW
 
@@ -163,3 +168,66 @@ async def test_the_preflight_stops_a_run_when_the_server_offers_other_tools(
     monkeypatch.setattr("agent_eval.tool_schemas", lambda: served[:-1])
     with pytest.raises(PreflightError, match="different tools"):
         await preflight(backend, to_current(world.data.customers["alex"]))
+
+
+class Scripted:
+    """A backend that answers from a list, or raises what it is given."""
+
+    def __init__(self, *answers):
+        self.answers = list(answers)
+
+    async def run(self, customer, call):
+        answer = self.answers.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+
+def ticks(*times):
+    it = iter(times)
+    return lambda: next(it)
+
+
+async def test_the_timed_backend_returns_what_the_backend_returns_and_times_each_call():
+    answer = ToolOutput("{}", "ok")
+    timed = TimedBackend(Scripted(answer, ToolOutput("{}", "denied")), ticks(0, 0.5, 1, 3))
+    call = ToolCall("1", "lookup_order", "{}")
+    assert await timed.run(None, call) is answer
+    await timed.run(None, ToolCall("2", "issue_refund", "{}"))
+    assert timed.calls == [
+        TimedCall("lookup_order", "ok", 0.5),
+        TimedCall("issue_refund", "denied", 2),
+    ]
+
+
+async def test_the_timed_backend_records_a_call_that_raised_and_lets_it_through():
+    timed = TimedBackend(Scripted(RuntimeError("boom")), ticks(0, 4))
+    with pytest.raises(RuntimeError):
+        await timed.run(None, ToolCall("1", "lookup_order", "{}"))
+    assert timed.calls == [TimedCall("lookup_order", "raised", 4)]
+
+
+def test_the_timing_splits_reads_from_writes_and_counts_the_calls_that_were_lost():
+    calls = [
+        TimedCall("lookup_order", "ok", 0.01),
+        TimedCall("search_knowledge", "ok", 0.03),
+        TimedCall("issue_refund", "allowed", 0.1),
+        TimedCall("create_ticket", "unknown", 0.5),
+        TimedCall("list_orders", "error", 0.02),
+    ]
+    timing = tool_timing(calls)
+    assert timing["calls"] == 5
+    assert timing["lost"] == 2
+    assert timing["reads"]["n"] == 3
+    assert timing["writes"]["n"] == 2
+    assert timing["all"]["median"] == 0.03
+    assert tool_timing([])["all"]["median"] is None
+
+
+def test_the_report_shows_the_tool_timing_in_milliseconds_and_the_lost_calls(capsys):
+    print_tool_timing(tool_timing([TimedCall("lookup_order", "ok", 0.012)]))
+    out = capsys.readouterr().out
+    assert "1 lost" not in out
+    assert "(1, 0 lost" in out
+    assert "12 ms median" in out
+    assert "writes  -" in out

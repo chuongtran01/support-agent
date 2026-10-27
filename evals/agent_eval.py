@@ -25,7 +25,8 @@ import math
 import statistics
 import time
 from collections import defaultdict
-from dataclasses import asdict, replace
+from collections.abc import Callable
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -44,8 +45,9 @@ from sqlalchemy import select
 
 from app import models
 from app.agent import store
-from app.agent.backends import McpBackend, ToolBackend
+from app.agent.backends import LocalBackend, McpBackend, ToolBackend
 from app.agent.events import DoneEvent, ErrorEvent, TextEvent, ToolEvent
+from app.agent.llm import ToolCall
 from app.agent.loop import AgentDeps, run_turn
 from app.agent.messages import AssistantContent, ToolContent
 from app.agent.openai_client import OpenAIClient
@@ -56,7 +58,8 @@ from app.mcp_server.mapping import to_tool
 from app.pricing import cost_usd
 from app.retrieval.embeddings import OpenAIEmbedder
 from app.seed import Seeded, seed
-from app.tools.registry import tool_schemas
+from app.tools.context import utc_now
+from app.tools.registry import TOOLS, ToolOutput, tool_schemas
 from app.tracing import get_tracer
 
 RESULTS = Path(__file__).resolve().parent / "results"
@@ -208,11 +211,11 @@ def percentile(values: list[float], q: float) -> float | None:
     return ordered[max(0, math.ceil(q * len(ordered)) - 1)]
 
 
-def _spread(values: list[float]) -> dict:
+def _spread(values: list[float], digits: int = 2) -> dict:
     return {
         "n": len(values),
-        "median": round(statistics.median(values), 2) if values else None,
-        "p95": round(p, 2) if (p := percentile(values, 0.95)) is not None else None,
+        "median": round(statistics.median(values), digits) if values else None,
+        "p95": round(p, digits) if (p := percentile(values, 0.95)) is not None else None,
     }
 
 
@@ -396,6 +399,19 @@ def print_latency_and_cost(summary: dict) -> None:
     )
 
 
+def print_tool_timing(tools: dict) -> None:
+    print(f"\nTool calls ({tools['calls']}, {tools['lost']} lost to error or unknown)")
+    for title in ("all", "reads", "writes"):
+        spread = tools[title]
+        if spread["median"] is None:
+            print(f"  {title:<8}-")
+        else:  # a tool call takes milliseconds, so not the whole-second format of a message
+            print(
+                f"  {title:<8}{spread['median'] * 1000:.0f} ms median, "
+                f"{spread['p95'] * 1000:.0f} ms p95 (n={spread['n']})"
+            )
+
+
 def print_judge(judge: dict) -> None:
     if not judge["judged"]:
         return
@@ -423,6 +439,8 @@ def print_report(summary: dict, cases: list[AgentCase], outcomes: list) -> None:
     print(f"Model calls per case    {summary['model_calls_per_case']}")
     print(f"Tokens per case         {summary['tokens_per_case']}")
     print_latency_and_cost(summary)
+    if "tools" in summary:
+        print_tool_timing(summary["tools"])
     print_judge(summary["judge"])
     steady = summary["stability"]
     if len(cases) > steady["cases"]:  # some case was run more than once
@@ -453,6 +471,50 @@ def build_backend(name: str) -> ToolBackend | None:
     if name == "mcp":
         return McpBackend(settings.mcp_server_url)
     raise ValueError(f"unknown backend {name!r}: use local or mcp")
+
+
+@dataclass(frozen=True)
+class TimedCall:
+    name: str
+    status: str  # the tool's status, or "raised" if the backend raised
+    seconds: float
+
+
+class TimedBackend:
+    """Any backend, with each call's duration recorded. It times the backend and not the
+    transport, so ``local`` and ``mcp`` are measured the same way, from the loop's side."""
+
+    def __init__(self, inner: ToolBackend, clock: Callable[[], float] = time.perf_counter):
+        self.inner = inner
+        self.clock = clock
+        self.calls: list[TimedCall] = []
+
+    async def run(self, customer: CurrentCustomer, call: ToolCall) -> ToolOutput:
+        started = self.clock()
+        status = "raised"
+        try:
+            output = await self.inner.run(customer, call)
+            status = output.status
+            return output
+        finally:
+            self.calls.append(TimedCall(call.name, status, self.clock() - started))
+
+
+def tool_timing(calls: list[TimedCall]) -> dict:
+    """Seconds per tool call, all and by reads and writes. ``lost`` counts the calls the
+    transport or the server failed (``error`` and ``unknown``): on a healthy run it is zero."""
+
+    def is_write(call: TimedCall) -> bool:
+        spec = TOOLS.get(call.name)
+        return spec is not None and spec.action is not None
+
+    return {
+        "calls": len(calls),
+        "all": _spread([c.seconds for c in calls], 4),
+        "reads": _spread([c.seconds for c in calls if not is_write(c)], 4),
+        "writes": _spread([c.seconds for c in calls if is_write(c)], 4),
+        "lost": sum(c.status in ("error", "unknown", "raised") for c in calls),
+    }
 
 
 class PreflightError(Exception):
@@ -490,16 +552,15 @@ async def main(
     cases = [case for case in cases for _ in range(repeat)]  # a case's runs sit together
     tracer = get_tracer()  # Langfuse if the keys are set, otherwise nothing
     tools = build_backend(backend)
+    embedder = OpenAIEmbedder()
     if isinstance(tools, McpBackend):
         async with SessionLocal.begin() as session:
             seeded = await seed(session)  # the server finds this customer in the same database
         await preflight(tools, to_current(seeded.customers["alex"]))
+    # Both backends are timed the same way, so a local run gets the backend the loop would build
+    timed = TimedBackend(tools or LocalBackend(SessionLocal, embedder, utc_now))
     deps = AgentDeps(
-        sessions=SessionLocal,
-        llm=OpenAIClient(),
-        embedder=OpenAIEmbedder(),
-        tracer=tracer,
-        tools=tools,
+        sessions=SessionLocal, llm=OpenAIClient(), embedder=embedder, tracer=tracer, tools=timed
     )
     judge = OpenAIJudge(settings.openai_api_key, settings.judge_model) if judged else None
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")  # names the result file and the traces
@@ -528,6 +589,7 @@ async def main(
         await engine.dispose()
 
     summary = summarize(cases, outcomes)
+    summary["tools"] = tool_timing(timed.calls)
     print_report(summary, cases, outcomes)
     RESULTS.mkdir(exist_ok=True)
     path = RESULTS / f"agent-{split}-{stamp}.json"
