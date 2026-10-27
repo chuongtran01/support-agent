@@ -20,7 +20,7 @@ A key identifies one call. If the model decides, after an `unknown`, to call `is
 - [x] **Table**: `idempotency_keys`, with a unique key per customer, made by migration `0004`
 - [x] **Key in the context**: `ToolContext` carries an optional key, set by the server from the request and never from the tool's arguments
 - [x] **Replay**: a tool marked idempotent runs once per customer and key; a second call with the same key and the same request returns the first call's output exactly, and a second call with a different request is refused
-- [ ] **Tools**: `issue_refund`, `create_ticket` and `escalate` are marked idempotent
+- [x] **Tools**: `issue_refund`, `create_ticket` and `escalate` are marked idempotent
 - [ ] **Transport**: the key travels with the call over MCP and the server reads it
 - [ ] **Client**: `McpBackend` makes one key per call and retries once after an `unknown` when that is safe
 - [ ] **Tests**: replay, refusal, concurrency, isolation between customers, rollback, the transport, and the retry

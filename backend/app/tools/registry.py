@@ -108,6 +108,7 @@ TOOLS: dict[str, ToolSpec] = {
             IssueRefundArguments,
             issue_refund,
             action="your refund",
+            idempotent=True,
         ),
         ToolSpec(
             "create_ticket",
@@ -115,6 +116,7 @@ TOOLS: dict[str, ToolSpec] = {
             CreateTicketArguments,
             create_ticket,
             action="your support ticket",
+            idempotent=True,
         ),
         ToolSpec(
             "escalate",
@@ -123,6 +125,7 @@ TOOLS: dict[str, ToolSpec] = {
             EscalateArguments,
             escalate,
             action="the escalation to our support team",
+            idempotent=True,
         ),
     )
 }
