@@ -1,6 +1,6 @@
 # Phase 9: When a tool call fails or stalls
 
-**Status:** planned
+**Status:** done
 **Gate:** a call that stalls after the server committed gives `unknown` and never "nothing was changed"; a call that never left the agent still says it was not done; a turn that ends after an unknown step tells the customer so
 
 This is phase 3 of `MCP_DESIGN.md`. Phase 8 made the agent call the tools over MCP and gave every transport failure one cautious answer. This phase replaces that stand-in with the real outcomes, and puts a limit on how long a call may take.
@@ -18,7 +18,7 @@ By the end, `McpBackend` tells these apart, gives the slow case a time limit, an
 - [x] **Which steps matter**: each tool that changes something has a customer-facing name, so an unknown result can say what could not be confirmed
 - [x] **Loop**: an unknown step is kept apart from a done step; a turn that ends after one says that the step could not be confirmed, and never that it was done
 - [x] **Tests**: a forced timeout after commit, a call that never left, the loop's messages, and the time limit itself
-- [ ] **Real run**: the API and the server as two processes, the server stopped, written up under "Gate check"
+- [x] **Real run**: the API and the server as two processes, the server stopped, written up under "Gate check"
 
 ## What the earlier phases already give
 
@@ -107,7 +107,14 @@ The wording is fixed in code and in the tests below. The model-written answer is
 
 ## Gate check
 
-To fill in when the phase is done.
+Run 2026-10-26.
+
+- **Tests:** 708 passed (683 at the end of phase 8). `McpBackend` is covered with a server that commits and then stalls, a server that is down, a refused token, a timeout while connecting, a slow close after the answer, and the time limit. Three deliberate breaks each made tests fail: `sent` always true, the answer thrown away on a slow close, and the timeout replaced by 60 seconds. The loop's messages are covered for a model failure after an unconfirmed step, a done step and an unconfirmed one together, a read whose answer was lost, and the step limit
+- **Real run, server not running:** the API with `TOOL_BACKEND=mcp` and nothing on port 8765, a real model, logged in as Alex, asking for a refund of the trail boots. The first call, `list_orders`, finished as `error`, the API logged `tool call list_orders over MCP failed (sent: False)`, and the model said it could not access the orders and had not submitted the refund. That is true: nothing was sent. In phase 8 the same run said the step "may or may not" have been done
+- **Real run, answer lost after the commit:** a real server process whose answers come 20 seconds after the commit (a script that wraps the sessions, kept outside the project) and the API with `MCP_CALL_TIMEOUT_SECONDS=3`. "Please open a support ticket: subject Zipper" made the model call `create_ticket`. The call finished as `unknown`, the API logged `(sent: True)`, and the model said it could not confirm whether the ticket was opened and that a person would need to follow up. The database then held the ticket: it had been created, and the client had said, correctly, that it could not know
+- **Cleanup:** the ticket and the two chat sessions the runs made were deleted after checking they were the only ones; refunds and tickets are back to 8 and 0, and ports 8765 and 8001 are free
+
+Not covered: the loop's own written messages (model failure and step limit after an unknown step) were checked in tests but not triggered with a real model, because that needs the model to fail at the right moment. `issue_refund` over MCP with a lost answer was run in tests only, not in a real process, so as not to create a refund in the dev database.
 
 ## Decisions to confirm
 
