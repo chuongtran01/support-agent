@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app import models
 from app.agent import store
+from app.agent.backends import LocalBackend
 from app.agent.events import (
     Citation,
     DoneEvent,
@@ -18,7 +19,9 @@ from app.agent.events import (
 )
 from app.agent.llm import Done, LLMError, TextDelta, ToolCall, Usage
 from app.agent.loop import (
+    CHECK_FIRST_MESSAGE,
     MODEL_FAILED_AFTER_ACTION_MESSAGE,
+    MODEL_FAILED_UNCONFIRMED_MESSAGE,
     MODEL_UNAVAILABLE_MESSAGE,
     NO_ANSWER_MESSAGE,
     STEP_LIMIT_MESSAGE,
@@ -37,6 +40,7 @@ from app.auth import CurrentCustomer
 from app.retrieval.search import SearchResult
 from app.seed import seed
 from app.tools import knowledge
+from app.tools.registry import ToolOutput
 from app.tracing import ANSWERED, FAILED, HANDED_OVER, MODEL_ERROR, NO_ANSWER
 from tests.mcp_app import mcp_backend
 from tests.recording_tracer import RecordingTracer
@@ -64,15 +68,13 @@ class World:
         }
 
     def deps(self, llm, **overrides):
-        # No waiting between tries of a failed model call
-        settings = {"retry_delay_seconds": 0, **overrides}
         embedder = FakeEmbedder()
         tools = None  # the loop runs the tools in this process
         if self.backend == "mcp":
             tools = mcp_backend(self.sessions, embedder=embedder, clock=lambda: NOW)
-        return AgentDeps(
-            self.sessions, llm, embedder=embedder, clock=lambda: NOW, tools=tools, **settings
-        )
+        # No waiting between tries of a failed model call
+        settings = {"retry_delay_seconds": 0, "tools": tools, **overrides}
+        return AgentDeps(self.sessions, llm, embedder=embedder, clock=lambda: NOW, **settings)
 
     async def chat(self, customer="alex"):
         return (await store.create_session(self.sessions, self.customers[customer].id)).id
@@ -487,6 +489,99 @@ async def test_a_model_failure_after_only_reads_does_not_claim_anything_was_done
     lookup = call("c1", "lookup_order", order_id=world.order_id("alex-5d"))
     _, events = await world.turn(FailsAfter([call_tools(lookup)]), "where is my order")
     assert events[-1] == ErrorEvent(MODEL_UNAVAILABLE_MESSAGE)
+
+
+class LosesAnswers:
+    """Runs the tools in this process, except those named: for them the call is sent and the
+    answer never comes back, as an MCP backend reports it."""
+
+    def __init__(self, world, lost: dict[str, str | None]):
+        self.local = LocalBackend(world.sessions, FakeEmbedder(), lambda: NOW)
+        self.lost = lost  # tool name -> what could not be confirmed, or None for a read
+
+    async def run(self, customer, call):
+        if call.name not in self.lost:
+            return await self.local.run(customer, call)
+        action = self.lost[call.name]
+        note = f"Whether {action} went through could not be confirmed." if action else None
+        return ToolOutput(json.dumps({"status": "unknown"}), "unknown", note)
+
+
+REFUND_UNCONFIRMED = "Whether your refund went through could not be confirmed."
+TICKET_UNCONFIRMED = "Whether your support ticket went through could not be confirmed."
+
+
+async def test_a_model_failure_after_an_unconfirmed_step_does_not_say_it_was_done(world):
+    item = world.item_id("BOOT-TR")
+    refund = call("c1", "issue_refund", order_item_id=item, quantity=1, reason_code="changed_mind")
+    tools = LosesAnswers(world, {"issue_refund": "your refund"})
+
+    session_id, events = await world.turn(
+        FailsAfter([call_tools(refund)]), "refund my boots", tools=tools
+    )
+
+    expected = f"{MODEL_FAILED_UNCONFIRMED_MESSAGE} {REFUND_UNCONFIRMED} {CHECK_FIRST_MESSAGE}"
+    assert events[-1] == ErrorEvent(expected)
+    assert "already done" not in expected
+    stored = await saved(world, "alex", session_id)
+    assert stored[-1].role == "assistant" and stored[-1].content.content == expected
+
+
+async def test_a_step_that_was_done_and_one_that_was_not_confirmed_are_both_reported(world):
+    item = world.item_id("BOOT-TR")
+    refund = call("c1", "issue_refund", order_item_id=item, quantity=1, reason_code="changed_mind")
+    ticket = call("c2", "create_ticket", subject="Zip", body="Stuck zipper")
+    tools = LosesAnswers(world, {"create_ticket": "your support ticket"})
+
+    _, events = await world.turn(
+        FailsAfter([call_tools(refund, ticket)]), "two things", tools=tools
+    )
+
+    assert events[-1] == ErrorEvent(
+        f"{MODEL_FAILED_AFTER_ACTION_MESSAGE} A refund of $121.05 has been made. "
+        f"{TICKET_UNCONFIRMED} {CHECK_FIRST_MESSAGE}"
+    )
+
+
+async def test_a_read_whose_answer_was_lost_claims_nothing(world):
+    lookup = call("c1", "lookup_order", order_id=world.order_id("alex-5d"))
+    tools = LosesAnswers(world, {"lookup_order": None})
+
+    _, events = await world.turn(FailsAfter([call_tools(lookup)]), "where is it", tools=tools)
+
+    assert events[-1] == ErrorEvent(MODEL_UNAVAILABLE_MESSAGE)
+
+
+async def test_the_step_limit_message_and_ticket_carry_an_unconfirmed_step(world):
+    item = world.item_id("BOOT-TR")
+    refund = call("c1", "issue_refund", order_item_id=item, quantity=1, reason_code="changed_mind")
+    tools = LosesAnswers(world, {"issue_refund": "your refund"})
+
+    session_id, events = await world.turn(
+        ScriptedLLM([call_tools(refund)]), "refund my boots", max_steps=1, tools=tools
+    )
+
+    expected = f"{STEP_LIMIT_MESSAGE} {REFUND_UNCONFIRMED}"
+    assert texts(events) == expected
+    stored = await saved(world, "alex", session_id)
+    assert stored[-1].content.content == expected
+    async with world.sessions() as session:
+        ticket = (await session.scalars(select(models.Ticket))).one()
+    assert ticket.body.endswith("- issue_refund: unknown")
+
+
+async def test_the_model_sees_the_unknown_result_and_can_tell_the_customer(world):
+    item = world.item_id("BOOT-TR")
+    refund = call("c1", "issue_refund", order_item_id=item, quantity=1, reason_code="changed_mind")
+    tools = LosesAnswers(world, {"issue_refund": "your refund"})
+    llm = ScriptedLLM([call_tools(refund), say("I could not confirm your refund.")])
+
+    _, events = await world.turn(llm, "refund my boots", tools=tools)
+
+    tool_message = llm.calls[1]["messages"][-1]
+    assert json.loads(tool_message.content) == {"status": "unknown"}
+    assert isinstance(events[-1], DoneEvent)
+    assert ToolEvent("issue_refund", "finished", "unknown") in events
 
 
 class Flaky:

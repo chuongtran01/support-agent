@@ -60,6 +60,12 @@ MODEL_FAILED_AFTER_ACTION_MESSAGE = (
     "The assistant stopped before it could finish, but part of your request was already done."
 )
 TRY_AGAIN_MESSAGE = "Please try again in a moment for anything else."
+# A tool's answer was lost, so the step may or may not have happened. Nothing here says it was
+# done, and "try again" is replaced by a warning, because trying again could do it twice
+MODEL_FAILED_UNCONFIRMED_MESSAGE = (
+    "The assistant stopped before it could finish, and a step could not be confirmed."
+)
+CHECK_FIRST_MESSAGE = "Please check before asking again."
 NO_ANSWER_MESSAGE = "The assistant did not produce an answer. Please try again."
 
 
@@ -152,6 +158,13 @@ async def _run_tool(deps: AgentDeps, customer: CurrentCustomer, call: ToolCall) 
     return await tools.run(customer, call)
 
 
+def _failed_after_tools(receipts: list[str], unconfirmed: list[str]) -> str:
+    """The message when the model failed after tools had changed, or may have changed, things."""
+    lead = MODEL_FAILED_AFTER_ACTION_MESSAGE if receipts else MODEL_FAILED_UNCONFIRMED_MESSAGE
+    closing = CHECK_FIRST_MESSAGE if unconfirmed else TRY_AGAIN_MESSAGE
+    return " ".join([lead, *receipts, *unconfirmed, closing])
+
+
 def _assistant_content(reply: _Reply) -> AssistantContent:
     return AssistantContent(
         content=reply.text or None,
@@ -217,6 +230,7 @@ async def _run_turn(
     retrieved: dict[str, Citation] = {}
     calls_made: list[str] = []  # "name: status", for the ticket if the agent runs out of steps
     receipts: list[str] = []  # what the tools did, in their own words, for the same case
+    unconfirmed: list[str] = []  # steps whose outcome is unknown, kept apart from what was done
     model_calls = prompt_tokens = completion_tokens = 0
     started = deps.monotonic()
 
@@ -234,11 +248,9 @@ async def _run_turn(
             logger.exception("model call failed")
             trace.finish(MODEL_ERROR)
             message = MODEL_UNAVAILABLE_MESSAGE
-            if receipts:
+            if receipts or unconfirmed:
                 # The tools' own words, as in the step limit: the model gets no turn to explain
-                message = " ".join(
-                    [MODEL_FAILED_AFTER_ACTION_MESSAGE, *receipts, TRY_AGAIN_MESSAGE]
-                )
+                message = _failed_after_tools(receipts, unconfirmed)
                 await store.save_message(
                     deps.sessions, session_id, AssistantContent(content=message)
                 )
@@ -275,7 +287,7 @@ async def _run_turn(
             tool_span.finish(status=output.status, output=output.text)
             calls_made.append(f"{call.name}: {output.status}")
             if output.receipt:
-                receipts.append(output.receipt)
+                (unconfirmed if output.status == "unknown" else receipts).append(output.receipt)
             if call.name == "search_knowledge":
                 add_retrieved(retrieved, output.text)
             outcome = ToolContent(tool_call_id=call.id, content=output.text)
@@ -286,7 +298,7 @@ async def _run_turn(
     # The model is out of steps or time, but its tools may have changed things in the last round.
     # The message is written here from the tools' own receipts, never by the model.
     await _hand_over(deps, customer, session_id, text, calls_made, model_calls)
-    message = " ".join([STEP_LIMIT_MESSAGE, *receipts])
+    message = " ".join([STEP_LIMIT_MESSAGE, *receipts, *unconfirmed])
     message_id = await store.save_message(
         deps.sessions, session_id, AssistantContent(content=message)
     )
