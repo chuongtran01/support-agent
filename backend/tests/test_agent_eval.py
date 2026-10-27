@@ -1,5 +1,6 @@
+import pytest
 from agent_checks import CaseResult, RunRecord
-from agent_eval import case_details, label, run_numbers, stability
+from agent_eval import build_backend, case_details, label, run_numbers, stability
 from test_agent_checks import case
 
 
@@ -43,6 +44,7 @@ from agent_checks import TurnRecord
 from agent_eval import cost, judging, latency, percentile
 from judge import Verdict
 
+from app.agent.backends import McpBackend
 from app.config import settings
 
 
@@ -110,3 +112,12 @@ def test_the_judges_verdicts_are_counted_and_the_failures_named_by_run():
 def test_unjudged_runs_are_not_counted():
     result = judging([case(id="r1")], [timed(1)])
     assert result["judged"] == 0 and result["supported"]["rate"] is None
+
+
+def test_the_backend_flag_picks_where_tools_run():
+    assert build_backend("local") is None
+    backend = build_backend("mcp")
+    assert isinstance(backend, McpBackend)
+    assert backend.url == settings.mcp_server_url
+    with pytest.raises(ValueError, match="unknown backend"):
+        build_backend("grpc")

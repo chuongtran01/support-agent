@@ -2,7 +2,8 @@
 
 Run from ``backend/`` (``make eval-agent``):
 
-    python ../evals/agent_eval.py [--split dev|test] [--only a001 a002 ...] [--repeat N] [--judge]
+    python ../evals/agent_eval.py [--split dev|test] [--only a001 a002 ...] [--repeat N]
+    [--backend local|mcp] [--judge]
 
 Each case starts from freshly seeded customers, orders and refunds (the knowledge base is
 left as ingested), logs in as the case's customer, and sends the messages one after another
@@ -10,6 +11,9 @@ through the agent loop with the real model. This calls the OpenAI API: expect a 
 calls per case. Tune the prompt against the dev split. The test split is held out: read its
 numbers, do not tune on them. A model answers differently each time, so ``--repeat N`` plays
 each case N times; the rates then count runs, and the report says which cases are flaky.
+
+``--backend mcp`` runs the agent's tool calls over MCP instead of in this process. Start the
+server on the same database first (``make mcp``); the default, ``local``, needs no server.
 
 This resets the business tables of the database in DATABASE_URL, as ``make seed`` does.
 """
@@ -40,6 +44,7 @@ from sqlalchemy import select
 
 from app import models
 from app.agent import store
+from app.agent.backends import McpBackend, ToolBackend
 from app.agent.events import DoneEvent, ErrorEvent, TextEvent, ToolEvent
 from app.agent.loop import AgentDeps, run_turn
 from app.agent.messages import AssistantContent, ToolContent
@@ -439,14 +444,29 @@ def print_report(summary: dict, cases: list[AgentCase], outcomes: list) -> None:
                 print(f"      {problem}")
 
 
-async def main(split: str, only: list[str] | None, repeat: int, judged: bool) -> None:
+def build_backend(name: str) -> ToolBackend | None:
+    """The agent's tool backend: None runs tools in this process, as the loop does by default."""
+    if name == "local":
+        return None
+    if name == "mcp":
+        return McpBackend(settings.mcp_server_url)
+    raise ValueError(f"unknown backend {name!r}: use local or mcp")
+
+
+async def main(
+    split: str, only: list[str] | None, repeat: int, judged: bool, backend: str = "local"
+) -> None:
     cases = load_cases(split)
     if only:
         cases = [c for c in cases if c.id in only]
     cases = [case for case in cases for _ in range(repeat)]  # a case's runs sit together
     tracer = get_tracer()  # Langfuse if the keys are set, otherwise nothing
     deps = AgentDeps(
-        sessions=SessionLocal, llm=OpenAIClient(), embedder=OpenAIEmbedder(), tracer=tracer
+        sessions=SessionLocal,
+        llm=OpenAIClient(),
+        embedder=OpenAIEmbedder(),
+        tracer=tracer,
+        tools=build_backend(backend),
     )
     judge = OpenAIJudge(settings.openai_api_key, settings.judge_model) if judged else None
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")  # names the result file and the traces
@@ -489,6 +509,12 @@ if __name__ == "__main__":
     parser.add_argument("--only", nargs="+", help="run just these case ids")
     parser.add_argument("--repeat", type=int, default=1, help="runs of each case (default 1)")
     parser.add_argument(
+        "--backend",
+        choices=("local", "mcp"),
+        default="local",
+        help="where tool calls run: in this process, or over MCP (needs make mcp running)",
+    )
+    parser.add_argument(
         "--judge",
         action="store_true",
         help="have the judge model read the knowledge and trap answers (about 10%% more tokens)",
@@ -496,4 +522,6 @@ if __name__ == "__main__":
     arguments = parser.parse_args()
     if arguments.repeat < 1:
         parser.error("--repeat must be at least 1")
-    asyncio.run(main(arguments.split, arguments.only, arguments.repeat, arguments.judge))
+    asyncio.run(
+        main(arguments.split, arguments.only, arguments.repeat, arguments.judge, arguments.backend)
+    )
