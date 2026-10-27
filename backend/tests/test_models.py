@@ -1,13 +1,14 @@
 from app.models import EMBEDDING_DIMENSIONS, Base, Chunk
 
 
-def test_all_nine_tables_are_defined():
+def test_all_ten_tables_are_defined():
     assert set(Base.metadata.tables) == {
         "customers",
         "orders",
         "order_items",
         "refunds",
         "tickets",
+        "idempotency_keys",
         "chat_sessions",
         "chat_messages",
         "documents",

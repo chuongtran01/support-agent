@@ -21,7 +21,7 @@ from app.auth import hash_password
 from app.config import settings
 from app.db import SessionLocal, engine
 
-BUSINESS_TABLES = "chat_messages, chat_sessions, refunds, tickets, order_items, orders, customers"
+BUSINESS_TABLES = "chat_messages, chat_sessions, idempotency_keys, refunds, tickets, order_items, orders, customers"
 
 
 @dataclass(frozen=True)

@@ -15,6 +15,7 @@ from sqlalchemy import (
     Index,
     Integer,
     Text,
+    UniqueConstraint,
     func,
     text,
 )
@@ -131,6 +132,30 @@ class Ticket(Base):
     body: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(Text, server_default="open")
     kind: Mapped[str] = mapped_column(Text, server_default="support")
+    created_at: Mapped[datetime] = _created_at()
+
+
+class IdempotencyKey(Base):
+    """A write call that has already run, so the same call sent again is answered, not repeated.
+
+    The key is the client's, and unique per customer. The first call's output is kept exactly as
+    it was given, so a repeat gets the same text, status and receipt for every outcome.
+    """
+
+    __tablename__ = "idempotency_keys"
+    __table_args__ = (
+        UniqueConstraint("customer_id", "key", name="idempotency_keys_customer_id_key_key"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id"))
+    key: Mapped[str] = mapped_column(Text)
+    tool: Mapped[str] = mapped_column(Text)
+    # A hash of the tool and its validated arguments: the same key must mean the same request
+    fingerprint: Mapped[str] = mapped_column(Text)
+    output: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(Text)
+    receipt: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = _created_at()
 
 
