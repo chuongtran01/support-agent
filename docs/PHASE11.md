@@ -21,7 +21,7 @@ A key identifies one call. If the model decides, after an `unknown`, to call `is
 - [x] **Key in the context**: `ToolContext` carries an optional key, set by the server from the request and never from the tool's arguments
 - [x] **Replay**: a tool marked idempotent runs once per customer and key; a second call with the same key and the same request returns the first call's output exactly, and a second call with a different request is refused
 - [x] **Tools**: `issue_refund`, `create_ticket` and `escalate` are marked idempotent
-- [ ] **Transport**: the key travels with the call over MCP and the server reads it
+- [x] **Transport**: the key travels with the call over MCP and the server reads it
 - [ ] **Client**: `McpBackend` makes one key per call and retries once after an `unknown` when that is safe
 - [ ] **Tests**: replay, refusal, concurrency, isolation between customers, rollback, the transport, and the retry
 - [ ] **Real run**: a real server whose first answer is lost, the retry returning the stored result, one row in the database, written up under "Gate check"
@@ -118,8 +118,8 @@ Each of the main guarantees gets a deliberate break to show its test fails: the 
 1. The migration, the model and the table in the cleared list, with the index test
 2. `ToolContext` gets the key, `ToolSpec` gets the flag, and `run_tool` does the claim and replay; tests with a key set directly on the context
 3. The three tools marked idempotent, and the tests for every outcome, refusal, concurrency, rollback and isolation
-4. The key over MCP: the client sends it, the server reads it, and the transport tests
-5. `McpBackend` makes a key and retries once; the retry tests, with the deliberate breaks
+4. The key over MCP: the server reads it, and `McpBackend` makes one key per call and sends it; the transport tests
+5. `McpBackend` retries once after an unknown, with the same key; the retry tests, with the deliberate breaks
 6. The real run with a server whose first answer is lost, written into this file
 
 ## Gate check

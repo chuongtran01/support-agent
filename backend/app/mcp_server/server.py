@@ -25,10 +25,10 @@ from starlette.applications import Starlette
 from app.agent import store
 from app.auth import CurrentCustomer
 from app.mcp_server.auth import Authenticate, RequireCustomer
-from app.mcp_server.mapping import to_call_result, to_tool
+from app.mcp_server.mapping import IDEMPOTENCY_KEY, to_call_result, to_tool
 from app.retrieval.embeddings import Embedder
 from app.tools.context import ToolContext, utc_now
-from app.tools.registry import TOOLS, ToolSpec, run_tool, tool_schemas
+from app.tools.registry import TOOLS, ToolOutput, ToolSpec, run_tool, tool_schemas
 
 # Where the SDK serves the protocol. Said out loud so a new SDK default cannot move it; the
 # default of MCP_SERVER_URL in config.py ends with it
@@ -62,8 +62,15 @@ def create_server(
         ctx: ServerRequestContext[Any, Any], params: CallToolRequestParams
     ) -> CallToolResult:
         customer = await caller(ctx)
+        key = (params.meta or {}).get(IDEMPOTENCY_KEY)
+        if key is not None and not isinstance(key, str):
+            message = "The idempotency key must be text."
+            output = ToolOutput(
+                json.dumps({"status": "invalid_request", "message": message}), "invalid_request"
+            )
+            return to_call_result(output)
         async with sessions() as session:
-            tool_context = ToolContext(session, customer.id, clock, embedder)
+            tool_context = ToolContext(session, customer.id, clock, embedder, idempotency_key=key)
             output = await run_tool(
                 tool_context, params.name, json.dumps(params.arguments or {}), tools
             )

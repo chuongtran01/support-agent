@@ -6,6 +6,7 @@ know whether the tool ran in this process or somewhere else.
 
 import json
 import logging
+import uuid
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import Protocol
@@ -19,7 +20,7 @@ from app.agent import store
 from app.agent.llm import ToolCall
 from app.auth import CurrentCustomer, create_token
 from app.config import settings
-from app.mcp_server.mapping import from_call_result
+from app.mcp_server.mapping import IDEMPOTENCY_KEY, from_call_result
 from app.retrieval.embeddings import Embedder
 from app.tools.context import ToolContext, utc_now
 from app.tools.registry import TOOLS, ToolOutput, ToolSpec, run_tool
@@ -102,12 +103,14 @@ class McpBackend:
         lifetime: timedelta = TOKEN_LIFETIME,
         timeout: float | None = None,
         tools: dict[str, ToolSpec] = TOOLS,
+        new_key: Callable[[], str] = lambda: uuid.uuid4().hex,
     ):
         self.url = url
         self.http_client = http_client
         self.lifetime = lifetime
         self.timeout = settings.mcp_call_timeout_seconds if timeout is None else timeout
         self.tools = tools
+        self.new_key = new_key
 
     async def run(self, customer: CurrentCustomer, call: ToolCall) -> ToolOutput:
         try:
@@ -118,6 +121,8 @@ class McpBackend:
             return _output("invalid_request", "The arguments must be a JSON object.")
 
         token = create_token(customer.id, lifetime=self.lifetime)
+        # One key for this call. A tool that is not idempotent ignores it
+        key = self.new_key()
         sent = False
         result = None
         try:
@@ -127,7 +132,9 @@ class McpBackend:
                     Client(streamable_http_client(self.url, http_client=http)) as client,
                 ):
                     sent = True  # from here the server may run the tool
-                    result = await client.call_tool(call.name, arguments)
+                    result = await client.call_tool(
+                        call.name, arguments, meta={IDEMPOTENCY_KEY: key}
+                    )
         except Exception:
             if result is None:
                 logger.exception("tool call %s over MCP failed (sent: %s)", call.name, sent)

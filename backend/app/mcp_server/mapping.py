@@ -13,6 +13,8 @@ from app.tools.registry import ToolOutput, ToolSchema
 # Prefixed so they cannot collide with keys the protocol reserves in ``_meta``
 STATUS_KEY = "northwind/status"
 RECEIPT_KEY = "northwind/receipt"
+# Sent by the client in a call's ``_meta``; the server reads it into the tool context
+IDEMPOTENCY_KEY = "northwind/idempotency-key"
 
 # The call itself went wrong. Every other status ("denied", "not_found", ...) is an answer
 ERROR_STATUSES = frozenset({"invalid_request", "error"})
