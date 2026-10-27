@@ -1,6 +1,6 @@
 # Phase 11: Idempotency keys and a safe retry
 
-**Status:** planned
+**Status:** done
 **Gate:** the same write call sent twice with the same key is done once and gives the same answer both times; a call whose answer is lost is retried once and, if the retry reaches the server, ends with the real result instead of `unknown`; a key can never reach another customer's data
 
 This is a follow-on to `MCP_DESIGN.md`, which listed idempotency keys as "a possible later change". Phase 9 made an unknown outcome honest. This phase makes most of them go away. It is done **before phase 10**, so the evals measure the client as it will stay.
@@ -24,7 +24,7 @@ A key identifies one call. If the model decides, after an `unknown`, to call `is
 - [x] **Transport**: the key travels with the call over MCP and the server reads it
 - [x] **Client**: `McpBackend` makes one key per call and retries once after an `unknown` when that is safe
 - [x] **Tests**: replay, refusal, concurrency, isolation between customers, rollback, the transport, and the retry
-- [ ] **Real run**: a real server whose first answer is lost, the retry returning the stored result, one row in the database, written up under "Gate check"
+- [x] **Real run**: a real server whose first answer is lost, the retry returning the stored result, one row in the database, written up under "Gate check"
 
 ## What the earlier phases already give
 
@@ -124,7 +124,19 @@ Each of the main guarantees gets a deliberate break to show its test fails: the 
 
 ## Gate check
 
-To fill in when the phase is done.
+Run 2026-10-27.
+
+- **Tests:** 764 passed (708 at the end of phase 9). The new ones are the table (6), replay and refusal (14), the real tools with a key (11), the key over MCP (14) and the retry (11). Deliberate breaks each made tests fail: the replay lookup removed, the fingerprint not checked, the first answer not stored, `issue_refund` not marked, the client sending no key, the server ignoring the key, a new key for the retry, no retry, and retrying everything
+- **The dev database** was migrated to `0004` with `make migrate` before the run
+- **Real run:** a real server process (a script kept outside the project, which runs the real app and holds each write's response back for 20 seconds after the tool has committed, the first time only), the API with `TOOL_BACKEND=mcp` and `MCP_CALL_TIMEOUT_SECONDS=3`, a real model, as Alex
+  - *Refund:* "Please refund the trail boots from my order, I changed my mind." The model read the orders, then called `issue_refund`. The server log shows it ran the call with key `ed614f57…` and held the answer back; the API timed out after 3 seconds and logged `unknown, trying once more`; the server then answered the same key at once, with no delay. The call finished `allowed` and the model said the refund was made, $121.05 after the $7.95 return label fee
+  - *Ticket:* "Please open a support ticket with the subject Zipper: my jacket zipper is stuck." The same sequence with key `5aef88cf…`. The call finished `ok` and the model said ticket #2 was opened
+  - *The database afterwards:* one refund (#11, Alex, completed, 12105 cents), one ticket (#2, Alex), and two stored keys, with the output, status and receipt of each first call. So the first attempt had committed, the client could not know, and the retry returned the stored answer without doing it again
+- **Cleanup:** the refund, the ticket, both stored keys and the chat sessions the runs made were deleted after checking they were the only ones. Refunds, tickets and keys are back to 8, 0 and 0. The id sequences moved on, so the next ticket is not #1
+
+My first attempt at the ticket turn never started, because my shell broke the JSON of the request. That was a mistake in the script, not in the system, and the turn was run again.
+
+Not covered: a real run where the retry also fails (two failed attempts are covered by a test, not by a real process), the model calling `issue_refund` again after an unknown (the limit described at the top: a new call gets a new key), and removing old keys.
 
 ## Decisions to confirm
 
