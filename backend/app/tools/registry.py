@@ -14,6 +14,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.policy.engine import ReasonCode
+from app.tools import idempotency
 from app.tools.context import ToolContext
 from app.tools.knowledge import MAX_QUERY, search_knowledge
 from app.tools.orders import list_orders, lookup_order
@@ -68,6 +69,8 @@ class ToolSpec:
     # What the tool changes, in words for the customer ("your refund"). None for a tool that
     # only reads. Used to say what could not be confirmed when a call's outcome is unknown
     action: str | None = None
+    # A call with an idempotency key runs once, and a repeat gets the first answer back
+    idempotent: bool = False
 
 
 TOOLS: dict[str, ToolSpec] = {
@@ -194,13 +197,36 @@ async def run_tool(
     except ValidationError as error:
         return _error("invalid_request", _describe(error))
 
+    key = ctx.idempotency_key if spec.idempotent else None
+    if key is not None and not idempotency.valid_key(key):
+        return _error(
+            "invalid_request",
+            f"The idempotency key must be 1 to {idempotency.MAX_KEY_LENGTH} characters.",
+        )
+
     try:
         async with ctx.session.begin():
+            held = None
+            if key is not None:
+                request = idempotency.fingerprint(name, arguments)
+                held = await idempotency.claim(ctx.session, ctx.customer_id, key, name, request)
+                if not held.first:
+                    if held.row.fingerprint != request:
+                        return _error(
+                            "invalid_request",
+                            "This idempotency key was already used for a different request.",
+                        )
+                    return ToolOutput(held.row.output, held.row.status, held.row.receipt)
             result = await spec.handler(ctx, **arguments.model_dump())
+            output = ToolOutput(
+                result.model_dump_json(exclude_none=True), result.status, result.receipt()
+            )
+            if held is not None:
+                idempotency.store(held.row, output.text, output.status, output.receipt)
     except Exception:
         logger.exception("tool %s failed", name)
         return _error("error", "The tool failed and nothing was changed. Tell the customer.")
-    return ToolOutput(result.model_dump_json(exclude_none=True), result.status, result.receipt())
+    return output
 
 
 async def dispatch(

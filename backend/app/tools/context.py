@@ -21,3 +21,6 @@ class ToolContext:
     clock: Callable[[], datetime] = field(default=utc_now)
     # Only search_knowledge uses it; the other tools never embed anything
     embedder: Embedder | None = None
+    # Set by the server from the request, never from a tool's arguments. A write tool marked
+    # idempotent runs once per customer and key
+    idempotency_key: str | None = None
