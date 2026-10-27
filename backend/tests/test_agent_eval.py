@@ -1,6 +1,15 @@
 import pytest
+import pytest_asyncio
 from agent_checks import CaseResult, RunRecord
-from agent_eval import build_backend, case_details, label, run_numbers, stability
+from agent_eval import (
+    PreflightError,
+    build_backend,
+    case_details,
+    label,
+    preflight,
+    run_numbers,
+    stability,
+)
 from test_agent_checks import case
 
 
@@ -43,9 +52,14 @@ def test_run_numbers_and_labels():
 from agent_checks import TurnRecord
 from agent_eval import cost, judging, latency, percentile
 from judge import Verdict
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.agent.backends import McpBackend
+from app.auth import to_current
 from app.config import settings
+from app.tools.registry import tool_schemas
+from tests.mcp_app import mcp_backend
+from tests.tool_world import NOW
 
 
 def timed(seconds, first=None, error=None, verdict=None, prompt=0, completion=0):
@@ -121,3 +135,31 @@ def test_the_backend_flag_picks_where_tools_run():
     assert backend.url == settings.mcp_server_url
     with pytest.raises(ValueError, match="unknown backend"):
         build_backend("grpc")
+
+
+@pytest_asyncio.fixture
+async def sessions(world, test_database_url):
+    engine = create_async_engine(test_database_url)
+    yield async_sessionmaker(engine, expire_on_commit=False)
+    await engine.dispose()
+
+
+async def test_the_preflight_passes_when_the_server_offers_the_registrys_tools(world, sessions):
+    backend = mcp_backend(sessions, clock=lambda: NOW)
+    await preflight(backend, to_current(world.data.customers["alex"]))
+
+
+async def test_the_preflight_stops_a_run_when_the_server_is_not_there(world):
+    backend = McpBackend("http://127.0.0.1:1/mcp", timeout=3)
+    with pytest.raises(PreflightError, match="not answering; start it with make mcp"):
+        await preflight(backend, to_current(world.data.customers["alex"]))
+
+
+async def test_the_preflight_stops_a_run_when_the_server_offers_other_tools(
+    world, sessions, monkeypatch
+):
+    backend = mcp_backend(sessions, clock=lambda: NOW)
+    served = tool_schemas()
+    monkeypatch.setattr("agent_eval.tool_schemas", lambda: served[:-1])
+    with pytest.raises(PreflightError, match="different tools"):
+        await preflight(backend, to_current(world.data.customers["alex"]))

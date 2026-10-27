@@ -1,6 +1,6 @@
 # Phase 10: The evals and the cost of the hop
 
-**Status:** in progress (step 1 of 7 built)
+**Status:** in progress (steps 1 and 2 of 7 built)
 **Gate:** the agent eval gives the same pass rates on `local` and `mcp` within run-to-run noise, with no tool call lost to the transport; the added time per tool call is measured; the README has the numbers and the commands that reproduce them
 
 This is phase 4 of `MCP_DESIGN.md`. Phases 7 to 9 built the server, the client and the failure handling, and tested them with scripted models. This phase asks the question the whole change exists to answer: does the real agent, with the real model, do as well through MCP as it does in-process, and what does the hop cost?
@@ -16,7 +16,7 @@ By the end the README says, with numbers: the agent passes as often through MCP 
 ## Deliverables
 
 - [x] **`--backend`**: `agent_eval.py` takes `--backend local|mcp` (default `local`) and builds the agent's tools accordingly (`build_backend` returns `None` for `local`, `McpBackend(settings.mcp_server_url)` for `mcp`, and refuses any other name)
-- [ ] **Preflight**: an `mcp` run first checks that the server answers, and stops with a clear message if it does not
+- [x] **Preflight**: an `mcp` run first checks that the server answers, and stops with a clear message if it does not. It seeds once so a customer exists, lists the tools through `McpBackend.list_tools`, and compares names and input schemas with the registry's
 - [ ] **Tool timing**: every tool call's duration is recorded on both backends, and the report gives the median and 95th percentile per backend
 - [ ] **Result files**: the file name and its contents say which backend produced them, and traces carry the backend as a tag
 - [ ] **Tests**: the new pieces, next to the harness's existing tests in `test_agent_eval.py`
@@ -85,7 +85,7 @@ The README puts a dev run of three repeats at about ten cents. Two backends and 
 ## Build order
 
 1. ~~`--backend` in the harness, `McpBackend` built from the setting, and its test~~ (done)
-2. The preflight and its tests
+2. ~~The preflight and its tests~~ (done; run for real against a stopped and a running server)
 3. `TimedBackend`, the timing in the report, the transport-loss count, and their tests
 4. The backend in the result file name, contents and trace tags
 5. A short real run of each backend on a few cases (`--only`) to check the plumbing before spending on the full runs

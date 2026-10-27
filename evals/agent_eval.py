@@ -49,12 +49,14 @@ from app.agent.events import DoneEvent, ErrorEvent, TextEvent, ToolEvent
 from app.agent.loop import AgentDeps, run_turn
 from app.agent.messages import AssistantContent, ToolContent
 from app.agent.openai_client import OpenAIClient
-from app.auth import to_current
+from app.auth import CurrentCustomer, to_current
 from app.config import settings
 from app.db import SessionLocal, engine
+from app.mcp_server.mapping import to_tool
 from app.pricing import cost_usd
 from app.retrieval.embeddings import OpenAIEmbedder
 from app.seed import Seeded, seed
+from app.tools.registry import tool_schemas
 from app.tracing import get_tracer
 
 RESULTS = Path(__file__).resolve().parent / "results"
@@ -453,6 +455,32 @@ def build_backend(name: str) -> ToolBackend | None:
     raise ValueError(f"unknown backend {name!r}: use local or mcp")
 
 
+class PreflightError(Exception):
+    """The MCP server is not ready for a run. The message says what to do."""
+
+
+async def preflight(backend: McpBackend, customer: CurrentCustomer) -> None:
+    """Stop before the first case if the server is down or serves other tools than the registry.
+
+    A server that is down would not fail the run: every tool call would come back as an error,
+    the model would apologise, and the score would look like a bad agent instead of a missing
+    server.
+    """
+    try:
+        listed = await backend.list_tools(customer)
+    except Exception as error:
+        raise PreflightError(
+            f"the MCP server at {backend.url} is not answering; start it with make mcp"
+        ) from error
+    served = {tool.name: tool.input_schema for tool in listed}
+    expected = {tool.name: tool.input_schema for tool in map(to_tool, tool_schemas())}
+    if served != expected:
+        raise PreflightError(
+            f"the MCP server at {backend.url} offers different tools than this code "
+            f"({sorted(served)} against {sorted(expected)}); restart it with make mcp"
+        )
+
+
 async def main(
     split: str, only: list[str] | None, repeat: int, judged: bool, backend: str = "local"
 ) -> None:
@@ -461,12 +489,17 @@ async def main(
         cases = [c for c in cases if c.id in only]
     cases = [case for case in cases for _ in range(repeat)]  # a case's runs sit together
     tracer = get_tracer()  # Langfuse if the keys are set, otherwise nothing
+    tools = build_backend(backend)
+    if isinstance(tools, McpBackend):
+        async with SessionLocal.begin() as session:
+            seeded = await seed(session)  # the server finds this customer in the same database
+        await preflight(tools, to_current(seeded.customers["alex"]))
     deps = AgentDeps(
         sessions=SessionLocal,
         llm=OpenAIClient(),
         embedder=OpenAIEmbedder(),
         tracer=tracer,
-        tools=build_backend(backend),
+        tools=tools,
     )
     judge = OpenAIJudge(settings.openai_api_key, settings.judge_model) if judged else None
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")  # names the result file and the traces
@@ -522,6 +555,15 @@ if __name__ == "__main__":
     arguments = parser.parse_args()
     if arguments.repeat < 1:
         parser.error("--repeat must be at least 1")
-    asyncio.run(
-        main(arguments.split, arguments.only, arguments.repeat, arguments.judge, arguments.backend)
-    )
+    try:
+        asyncio.run(
+            main(
+                arguments.split,
+                arguments.only,
+                arguments.repeat,
+                arguments.judge,
+                arguments.backend,
+            )
+        )
+    except PreflightError as error:
+        raise SystemExit(f"error: {error}") from None

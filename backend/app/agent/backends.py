@@ -15,6 +15,7 @@ import anyio
 import httpx2
 from mcp.client import Client
 from mcp.client.streamable_http import streamable_http_client
+from mcp_types import Tool
 
 from app.agent import store
 from app.agent.llm import ToolCall
@@ -132,6 +133,16 @@ class McpBackend:
             logger.warning("tool call %s over MCP is unknown, trying once more", call.name)
             output = await self._attempt(customer, call, arguments, key)
         return output
+
+    async def list_tools(self, customer: CurrentCustomer) -> list[Tool]:
+        """The tools the server offers this customer. Raises if it cannot be reached."""
+        token = create_token(customer.id, lifetime=self.lifetime)
+        with anyio.fail_after(self.timeout):
+            async with (
+                self.http_client({"Authorization": f"Bearer {token}"}) as http,
+                Client(streamable_http_client(self.url, http_client=http)) as client,
+            ):
+                return (await client.list_tools()).tools
 
     def _safe_to_repeat(self, name: str) -> bool:
         spec = self.tools.get(name)
