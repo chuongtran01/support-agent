@@ -1,6 +1,6 @@
 # Phase 10: The evals and the cost of the hop
 
-**Status:** in progress (steps 1 to 4 of 7 built)
+**Status:** in progress (steps 1 to 5 of 7 done)
 **Gate:** the agent eval gives the same pass rates on `local` and `mcp` within run-to-run noise, with no tool call lost to the transport; the added time per tool call is measured; the README has the numbers and the commands that reproduce them
 
 This is phase 4 of `MCP_DESIGN.md`. Phases 7 to 9 built the server, the client and the failure handling, and tested them with scripted models. This phase asks the question the whole change exists to answer: does the real agent, with the real model, do as well through MCP as it does in-process, and what does the hop cost?
@@ -88,9 +88,24 @@ The README puts a dev run of three repeats at about ten cents. Two backends and 
 2. ~~The preflight and its tests~~ (done; run for real against a stopped and a running server)
 3. ~~`TimedBackend`, the timing in the report, the transport-loss count, and their tests~~ (done)
 4. ~~The backend in the result file name, contents and trace tags~~ (done; the file contents and tags are checked by the real run in step 5, the name by a test)
-5. A short real run of each backend on a few cases (`--only`) to check the plumbing before spending on the full runs
+5. ~~A short real run of each backend on a few cases (`--only`) to check the plumbing before spending on the full runs~~ (done, see "Plumbing check")
 6. The full recorded runs: dev three times and test once, `local` then `mcp`, `make seed` between and after
 7. The comparison, the README section and the commands, and `MCP_DESIGN.md`
+
+## Plumbing check
+
+Run 2026-10-27, six dev cases on each backend (`a001` search, `a031` lookup, `a032` refund, `a051` ticket, `a052` escalate, `a058` list orders), one run each, no judge. `make seed` afterwards.
+
+| | `local` | `mcp` |
+| --- | --- | --- |
+| Passed | 6 of 6 | 6 of 6 |
+| Tool calls | 8, 0 lost | 8, 0 lost |
+| Tool call, median / p95 | 7 ms / 714 ms | 31 ms / 354 ms |
+| Reads / writes, median | 7 ms / 6 ms | 30 ms / 34 ms |
+
+The preflight passed against the real server, which logged 26 `POST /mcp` requests and no errors. Both result files carry `backend` at the top and in the summary. Six cases are too few to compare: the 714 ms and 354 ms p95 are single `search_knowledge` calls, which wait on the embedding API. Traces were not checked, because this machine has no Langfuse keys, so the tag change is only covered by reading the code.
+
+A first attempt played no cases: in zsh an unquoted `$IDS` is one argument, so `--only` matched nothing. The report printed `0/0` and a result file with no cases; that file was deleted. `--only` with an id that matches no case should probably be an error (not done here).
 
 ## Gate check
 
