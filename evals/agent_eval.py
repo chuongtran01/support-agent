@@ -524,8 +524,23 @@ def tool_timing(calls: list[TimedCall]) -> dict:
     }
 
 
-class PreflightError(Exception):
-    """The MCP server is not ready for a run. The message says what to do."""
+class EvalError(Exception):
+    """A run that cannot start. The message says what to do."""
+
+
+class PreflightError(EvalError):
+    """The MCP server is not ready for a run."""
+
+
+def select_cases(cases: list[AgentCase], only: list[str] | None) -> list[AgentCase]:
+    """The cases named by ``--only``, or all of them. An id that matches no case is an error:
+    a typo would otherwise play nothing and report a clean ``0/0``."""
+    if not only:
+        return cases
+    unknown = sorted(set(only) - {c.id for c in cases})
+    if unknown:
+        raise EvalError(f"no such case in this split: {', '.join(unknown)}")
+    return [c for c in cases if c.id in only]
 
 
 async def preflight(backend: McpBackend, customer: CurrentCustomer) -> None:
@@ -553,9 +568,7 @@ async def preflight(backend: McpBackend, customer: CurrentCustomer) -> None:
 async def main(
     split: str, only: list[str] | None, repeat: int, judged: bool, backend: str = "local"
 ) -> None:
-    cases = load_cases(split)
-    if only:
-        cases = [c for c in cases if c.id in only]
+    cases = select_cases(load_cases(split), only)
     cases = [case for case in cases for _ in range(repeat)]  # a case's runs sit together
     tracer = get_tracer()  # Langfuse if the keys are set, otherwise nothing
     tools = build_backend(backend)
@@ -639,5 +652,5 @@ if __name__ == "__main__":
                 arguments.backend,
             )
         )
-    except PreflightError as error:
+    except EvalError as error:
         raise SystemExit(f"error: {error}") from None

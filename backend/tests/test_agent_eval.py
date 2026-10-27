@@ -2,6 +2,7 @@ import pytest
 import pytest_asyncio
 from agent_checks import CaseResult, RunRecord
 from agent_eval import (
+    EvalError,
     PreflightError,
     TimedBackend,
     TimedCall,
@@ -12,6 +13,7 @@ from agent_eval import (
     print_tool_timing,
     run_name,
     run_numbers,
+    select_cases,
     stability,
     tool_timing,
 )
@@ -239,3 +241,11 @@ def test_the_backend_is_in_the_name_of_the_run_that_names_the_file_and_the_trace
     over_mcp = run_name("dev", "mcp", "20261027-100000")
     assert local == "agent-dev-local-20261027-100000"
     assert over_mcp == "agent-dev-mcp-20261027-100000"
+
+
+def test_only_picks_the_named_cases_and_refuses_an_id_that_matches_none():
+    cases = [case(id="a"), case(id="b")]
+    assert select_cases(cases, None) == cases
+    assert select_cases(cases, ["b"]) == [cases[1]]
+    with pytest.raises(EvalError, match="no such case in this split: zz"):
+        select_cases(cases, ["a", "zz"])
