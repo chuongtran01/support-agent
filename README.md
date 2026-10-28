@@ -7,7 +7,7 @@ risky refunds, and an eval harness that measures all of it.
 The agent answers policy questions with citations, looks up a customer's orders, issues refunds
 through a policy engine the model cannot override, holds refunds over $200 for a person, and says
 "I don't know" or hands over when the sources are missing or disagree. There is no agent framework:
-the loop (`backend/app/agent/loop.py`, about 240 lines) calls the OpenAI Responses API directly, so each step can be read and tested.
+the loop (`backend/app/agent/loop.py`, about 300 lines) calls the OpenAI Responses API directly, so each step can be read and tested.
 
 ## Results
 
@@ -75,6 +75,8 @@ flowchart TD
     API["FastAPI<br/>login, sessions, server-sent events"]
     AGENT["Agent loop<br/>OpenAI Responses API, no framework"]
     RET["search_knowledge<br/>keyword + vector, fused (RRF)"]
+    BACKEND["Tool backend<br/>in process (default) or over MCP"]
+    MCP["MCP tool server (separate process)<br/>Streamable HTTP, signed token per call,<br/>idempotency key for writes"]
     TOOLS["Order tools<br/>list_orders, lookup_order, issue_refund,<br/>create_ticket, escalate<br/>scoped to the logged-in customer"]
     POLICY["Policy engine<br/>one pure function:<br/>allowed, needs approval, denied, manual review"]
     PG[("Postgres<br/>pgvector chunks and full-text index,<br/>orders, refunds, sessions")]
@@ -83,7 +85,10 @@ flowchart TD
 
     UI -->|stream| API --> AGENT
     AGENT --> RET --> PG
-    AGENT --> TOOLS --> POLICY --> PG
+    AGENT --> BACKEND
+    BACKEND -->|TOOL_BACKEND=local| TOOLS
+    BACKEND -.->|TOOL_BACKEND=mcp| MCP -.-> TOOLS
+    TOOLS --> POLICY --> PG
     AGENT -.->|spans| LF
     EV -.->|plays cases through| AGENT
 ```
@@ -92,6 +97,15 @@ Rules live in code, not in the prompt. The model picks a tool and its arguments;
 the login, so it cannot name whose data to read. `issue_refund` only passes the request to the policy
 engine, which decides the amount and whether a person must approve. Passages and tool results reach the
 model as data, wrapped and labelled, with an instruction not to follow anything inside them.
+
+**Tools over MCP.** The order tools can run in the API's process (`TOOL_BACKEND=local`, the default) or behind
+an [MCP](https://modelcontextprotocol.io) server that the agent calls over HTTP (`TOOL_BACKEND=mcp`, start the
+server with `make mcp`). The tool code, the policy engine and the database are the same either way. Over MCP the
+agent signs a short-lived token for the logged-in customer on every call, so the server reads the customer from
+the token and never from the model's arguments. A call whose answer is lost after the server committed comes
+back as `unknown`, not "nothing was changed"; the three write tools run once per idempotency key, so the client
+can safely retry. The hop costs about 24 ms per tool call and the agent evals pass at the same rate on both (see
+[Results](#results)). The design is in [`docs/MCP_DESIGN.md`](docs/MCP_DESIGN.md).
 
 ## Demo
 
@@ -114,8 +128,9 @@ The model words its answers a little differently each run. Details are in [`docs
 | Path | Purpose |
 |---|---|
 | `backend/app/api/` | The HTTP layer: routes, dependencies (login, database, model), server-sent events. The only code that imports FastAPI |
-| `backend/app/agent/` | The agent loop, model client, prompt, chat storage, citation checks and the turn runner |
-| `backend/app/tools/` | The tools the model can call, their argument models and results |
+| `backend/app/agent/` | The agent loop, model client, prompt, chat storage, citation checks and the turn runner. `backends.py` runs a tool call in process or over MCP |
+| `backend/app/tools/` | The tools the model can call, their argument models and results, and the idempotency keys |
+| `backend/app/mcp_server/` | The MCP server over those tools: token check, mapping to and from MCP (`make mcp`) |
 | `backend/app/policy/` | The refund policy engine: one pure function |
 | `backend/app/retrieval/` | Chunking, ingestion and hybrid search |
 | `backend/app/orders.py` | A customer's orders with items and refunds, read for both the `lookup_order` tool and `GET /orders` |
@@ -164,6 +179,21 @@ cd backend
 Log in with `POST /auth/login` (for example `alex@example.com` and the seed password), then send the token as `Authorization: Bearer ...`. A message is `POST /sessions/{id}/messages` and the answer streams back as server-sent events (`curl -N` shows them). The agent needs `OPENAI_API_KEY` and the knowledge base loaded (next section).
 
 The agent calls the OpenAI Responses API with the model in `AGENT_MODEL` (default `gpt-6-luna`) and the reasoning level in `AGENT_REASONING_EFFORT` (`none`, `low`, `medium` or `high`; default `medium`).
+
+## Run the tools over MCP
+
+The agent runs its tools in process unless told otherwise. To run them behind the MCP server, in two terminals:
+
+```sh
+make mcp                                                 # the tool server, http://localhost:8765/mcp
+cd backend && TOOL_BACKEND=mcp .venv/bin/uvicorn app.main:app --reload
+```
+
+The server shares the database and `JWT_SECRET` with the API, and it will not start on the default secret if it
+listens on anything but this machine. `MCP_CALL_TIMEOUT_SECONDS` (default 30) bounds one attempt at a call; an
+`unknown` call is retried once when that is safe. The settings are in `.env.example`, and
+`make eval-agent ARGS="--backend mcp"` checks the server is up and offers the expected tools before it starts.
+This is a local setup, not a production one: plain HTTP, one shared signing secret, no rate limits.
 
 ## Run the web app
 
