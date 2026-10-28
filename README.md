@@ -1,8 +1,8 @@
 # Northwind Support Agent
 
 A customer support agent for a fictional outdoor-gear retailer. Hybrid retrieval over a
-messy knowledge base, scoped action tools, a code-level policy engine, human approval for
-risky refunds, and an eval harness that measures all of it.
+messy knowledge base, scoped action tools that can run behind an MCP server, a code-level policy
+engine, human approval for risky refunds, and an eval harness that measures all of it.
 
 The agent answers policy questions with citations, looks up a customer's orders, issues refunds
 through a policy engine the model cannot override, holds refunds over $200 for a person, and says
